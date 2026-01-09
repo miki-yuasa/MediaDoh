@@ -1,7 +1,7 @@
 [package]
 name = "mediadoh"
 version = "0.1.0"
-description = "A Tauri App"
+description = "MediaDoh - A cross-platform music management app for Sony Walkman devices"
 authors = ["you"]
 edition = "2021"
 
@@ -18,8 +18,74 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Tauri core
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Audio playback - rodio with symphonia for MP3, FLAC, ALAC support
+rodio = { version = "0.19", features = ["symphonia-all"] }
+# Low-level audio for hi-res output
+cpal = "0.15"
+
+# Database - SQLite with async runtime
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Audio metadata parsing (MP3, FLAC, ALAC, etc.)
+lofty = "0.21"
+
+# System info for device/volume detection
+sysinfo = "0.32"
+
+# File hashing for sync comparison
+sha2 = "0.10"
+hex = "0.4"
+
+# Path handling and filesystem utilities
+walkdir = "2"
+dirs = "5"
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Unique IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Cross-platform path normalization
+dunce = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS-specific audio APIs if needed
+coreaudio-rs = { version = "0.12", optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Windows-specific for WASAPI access
+windows = { version = "0.58", features = ["Win32_Media_Audio", "Win32_System_Com"], optional = true }
+
+[features]
+default = []
+hi-res-audio = ["coreaudio-rs", "windows"]
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+strip = true
 

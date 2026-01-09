@@ -1,0 +1,222 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* MediaDoh CSS Variables */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --background-secondary: 0 0% 98%;
+    --background-tertiary: 0 0% 96%;
+    --foreground: 0 0% 9%;
+    --foreground-muted: 0 0% 45%;
+
+    --border: 0 0% 89%;
+    --ring: 0 0% 64%;
+
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Sync status colors */
+    --synced: 142 76% 36%;
+    --sync-pending: 38 92% 50%;
+    --sync-warning: 25 95% 53%;
+  }
+
+  .dark {
+    /* Sony-inspired deep grays, not pure black */
+    --background: 0 0% 8%;
+    --background-secondary: 0 0% 11%;
+    --background-tertiary: 0 0% 14%;
+    --foreground: 0 0% 95%;
+    --foreground-muted: 0 0% 64%;
+
+    --border: 0 0% 20%;
+    --ring: 0 0% 40%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+
+    --secondary: 0 0% 17%;
+    --secondary-foreground: 0 0% 98%;
+
+    --accent: 0 0% 17%;
+    --accent-foreground: 0 0% 98%;
+
+    --muted: 0 0% 17%;
+    --muted-foreground: 0 0% 64%;
+
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Sync status colors - slightly muted for dark mode */
+    --synced: 142 71% 45%;
+    --sync-pending: 38 92% 50%;
+    --sync-warning: 25 95% 53%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Prevent text selection during drag operations */
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Custom scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background-secondary;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/30 rounded;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+
+  /* Dark mode scrollbar */
+  .dark ::-webkit-scrollbar-track {
+    @apply bg-background-secondary;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+}
+
+@layer components {
+  /* High-density table rows */
+  .song-row {
+    @apply flex items-center px-2 py-1 text-sm border-b border-border/50;
+    @apply hover:bg-accent/50 cursor-pointer transition-colors;
+  }
+
+  .song-row.selected {
+    @apply bg-primary/10;
+  }
+
+  .song-row.playing {
+    @apply bg-primary/5;
+  }
+
+  /* Album grid card */
+  .album-card {
+    @apply flex flex-col p-2 rounded-md cursor-pointer;
+    @apply hover:bg-accent/50 transition-colors;
+  }
+
+  .album-card .album-art {
+    @apply aspect-square rounded-sm overflow-hidden bg-muted;
+  }
+
+  .album-card .album-info {
+    @apply mt-2 space-y-0.5;
+  }
+
+  /* Sidebar item */
+  .sidebar-item {
+    @apply flex items-center gap-2 px-3 py-1.5 text-sm rounded-md;
+    @apply hover:bg-accent cursor-pointer transition-colors;
+  }
+
+  .sidebar-item.active {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  /* Player controls */
+  .player-button {
+    @apply p-2 rounded-full hover:bg-accent transition-colors;
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+  }
+
+  .player-button.primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    @apply relative h-1 bg-muted rounded-full overflow-hidden;
+  }
+
+  .progress-bar .progress-fill {
+    @apply absolute left-0 top-0 h-full bg-primary transition-all;
+  }
+
+  /* Sync status indicator */
+  .sync-indicator {
+    @apply w-4 h-4 flex items-center justify-center;
+  }
+
+  .sync-indicator.synced {
+    @apply text-synced;
+  }
+
+  .sync-indicator.pending {
+    @apply text-sync-pending;
+  }
+
+  .sync-indicator.warning {
+    @apply text-sync-warning;
+  }
+}
+
+@layer utilities {
+  /* Duration formatting helper */
+  .duration {
+    @apply tabular-nums text-muted-foreground;
+  }
+
+  /* Ellipsis for long text */
+  .ellipsis {
+    @apply truncate;
+  }
+
+  /* Hi-res audio badge */
+  .hires-badge {
+    @apply inline-flex items-center px-1.5 py-0.5 text-xs font-medium;
+    @apply bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded;
+  }
+
+  /* Format badge */
+  .format-badge {
+    @apply inline-flex items-center px-1.5 py-0.5 text-xs font-medium;
+    @apply bg-muted text-muted-foreground rounded uppercase;
+  }
+}
+
+/* Font imports for Japanese support */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600&display=swap');

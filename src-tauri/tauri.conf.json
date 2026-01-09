@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "mediadoh",
+  "productName": "MediaDoh",
   "version": "0.1.0",
   "identifier": "com.mediadoh.app",
   "build": {
@@ -12,9 +12,15 @@
   "app": {
     "windows": [
       {
-        "title": "mediadoh",
-        "width": 800,
-        "height": 600
+        "title": "MediaDoh - Media道",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false
       }
     ],
     "security": {
@@ -30,6 +36,35 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Music",
+    "shortDescription": "Music management for Sony Walkman",
+    "longDescription": "MediaDoh (Media道) - A cross-platform music management application designed for Sony Walkman devices. Manage your local library and synchronize with your Walkman.",
+    "copyright": "Copyright © 2026 MediaDoh",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "fs": {
+      "scope": {
+        "allow": [
+          "$AUDIO/**",
+          "$HOME/**",
+          "$DOCUMENT/**",
+          "$DOWNLOAD/**",
+          "$DESKTOP/**",
+          "/Volumes/**",
+          "/media/**",
+          "/mnt/**",
+          "/run/media/**"
+        ]
+      }
+    }
   }
 }
