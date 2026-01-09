@@ -63,9 +63,8 @@ pub fn get_app_data_dir() -> Result<PathBuf> {
 
 /// Get the cache directory for album art etc.
 pub fn get_cache_dir() -> Result<PathBuf> {
-    let base = dirs::cache_dir().ok_or_else(|| {
-        MediaDohError::Config("Could not determine cache directory".to_string())
-    })?;
+    let base = dirs::cache_dir()
+        .ok_or_else(|| MediaDohError::Config("Could not determine cache directory".to_string()))?;
 
     let cache_dir = base.join("MediaDoh");
     std::fs::create_dir_all(&cache_dir)?;

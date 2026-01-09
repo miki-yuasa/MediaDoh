@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from "react-i18next";
 import {
   Play,
   Pause,
@@ -9,10 +9,10 @@ import {
   Repeat,
   Repeat1,
   Shuffle,
-} from 'lucide-react';
-import { cn, formatDuration } from '@/lib/utils';
-import { usePlayerStore } from '@/store';
-import { playSong, pause, resume, setVolume } from '@/api/tauri';
+} from "lucide-react";
+import { cn, formatDuration } from "@/lib/utils";
+import { usePlayerStore } from "@/store";
+import { playSong, pause, resume, setVolume } from "@/api/tauri";
 
 export function PlayerBar() {
   const { t } = useTranslation();
@@ -51,7 +51,7 @@ export function PlayerBar() {
         setIsPaused(false);
       }
     } catch (error) {
-      console.error('Playback error:', error);
+      console.error("Playback error:", error);
     }
   };
 
@@ -61,7 +61,7 @@ export function PlayerBar() {
     try {
       await setVolume(newVolume);
     } catch (error) {
-      console.error('Volume error:', error);
+      console.error("Volume error:", error);
     }
   };
 
@@ -80,13 +80,15 @@ export function PlayerBar() {
   };
 
   const cycleRepeatMode = () => {
-    const modes: Array<'off' | 'all' | 'one'> = ['off', 'all', 'one'];
+    const modes: Array<"off" | "all" | "one"> = ["off", "all", "one"];
     const currentIndex = modes.indexOf(repeatMode);
     const nextMode = modes[(currentIndex + 1) % modes.length];
     setRepeatMode(nextMode);
   };
 
-  const progress = currentSong ? (positionMs / currentSong.durationMs) * 100 : 0;
+  const progress = currentSong
+    ? (positionMs / currentSong.durationMs) * 100
+    : 0;
 
   return (
     <footer className="h-20 border-t border-border bg-background-secondary flex items-center px-4 gap-4">
@@ -97,8 +99,8 @@ export function PlayerBar() {
             <div className="w-12 h-12 bg-muted rounded flex-shrink-0 flex items-center justify-center">
               {currentSong.hasEmbeddedArt ? (
                 <img
-                  src={currentSong.artCachePath || ''}
-                  alt={currentSong.album || ''}
+                  src={currentSong.artCachePath || ""}
+                  alt={currentSong.album || ""}
                   className="w-full h-full object-cover rounded"
                 />
               ) : (
@@ -106,14 +108,18 @@ export function PlayerBar() {
               )}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{currentSong.title}</p>
+              <p className="text-sm font-medium truncate">
+                {currentSong.title}
+              </p>
               <p className="text-xs text-muted-foreground truncate">
-                {currentSong.artist || 'Unknown Artist'}
+                {currentSong.artist || "Unknown Artist"}
               </p>
             </div>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">{t('player.nowPlaying')}</p>
+          <p className="text-sm text-muted-foreground">
+            {t("player.nowPlaying")}
+          </p>
         )}
       </div>
 
@@ -122,8 +128,8 @@ export function PlayerBar() {
         <div className="flex items-center gap-2">
           <button
             onClick={toggleShuffle}
-            className={cn('player-button', shuffle && 'text-primary')}
-            title={t('player.shuffle')}
+            className={cn("player-button", shuffle && "text-primary")}
+            title={t("player.shuffle")}
           >
             <Shuffle className="w-4 h-4" />
           </button>
@@ -131,7 +137,7 @@ export function PlayerBar() {
           <button
             onClick={handlePrevious}
             className="player-button"
-            title={t('player.previous')}
+            title={t("player.previous")}
           >
             <SkipBack className="w-5 h-5" />
           </button>
@@ -139,7 +145,9 @@ export function PlayerBar() {
           <button
             onClick={handlePlayPause}
             className="player-button primary w-10 h-10"
-            title={isPlaying && !isPaused ? t('player.pause') : t('player.play')}
+            title={
+              isPlaying && !isPaused ? t("player.pause") : t("player.play")
+            }
           >
             {isPlaying && !isPaused ? (
               <Pause className="w-5 h-5" />
@@ -151,23 +159,26 @@ export function PlayerBar() {
           <button
             onClick={handleNext}
             className="player-button"
-            title={t('player.next')}
+            title={t("player.next")}
           >
             <SkipForward className="w-5 h-5" />
           </button>
 
           <button
             onClick={cycleRepeatMode}
-            className={cn('player-button', repeatMode !== 'off' && 'text-primary')}
+            className={cn(
+              "player-button",
+              repeatMode !== "off" && "text-primary"
+            )}
             title={
-              repeatMode === 'one'
-                ? t('player.repeatOne')
-                : repeatMode === 'all'
-                ? t('player.repeatAll')
-                : t('player.repeat')
+              repeatMode === "one"
+                ? t("player.repeatOne")
+                : repeatMode === "all"
+                ? t("player.repeatAll")
+                : t("player.repeat")
             }
           >
-            {repeatMode === 'one' ? (
+            {repeatMode === "one" ? (
               <Repeat1 className="w-4 h-4" />
             ) : (
               <Repeat className="w-4 h-4" />
@@ -181,13 +192,10 @@ export function PlayerBar() {
             {formatDuration(positionMs)}
           </span>
           <div className="flex-1 progress-bar">
-            <div
-              className="progress-fill"
-              style={{ width: `${progress}%` }}
-            />
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
           <span className="text-xs duration w-10">
-            {currentSong ? formatDuration(currentSong.durationMs) : '--:--'}
+            {currentSong ? formatDuration(currentSong.durationMs) : "--:--"}
           </span>
         </div>
       </div>
@@ -197,7 +205,7 @@ export function PlayerBar() {
         <button
           onClick={toggleMute}
           className="player-button"
-          title={isMuted ? 'Unmute' : t('player.mute')}
+          title={isMuted ? "Unmute" : t("player.mute")}
         >
           {isMuted || volume === 0 ? (
             <VolumeX className="w-4 h-4" />
@@ -213,7 +221,7 @@ export function PlayerBar() {
           value={isMuted ? 0 : volume}
           onChange={handleVolumeChange}
           className="flex-1 h-1 bg-muted rounded-full appearance-none cursor-pointer"
-          title={t('player.volume')}
+          title={t("player.volume")}
         />
       </div>
     </footer>

@@ -33,7 +33,10 @@ impl AudioFormat {
     }
 
     pub fn is_lossless(&self) -> bool {
-        matches!(self, AudioFormat::Flac | AudioFormat::Alac | AudioFormat::Wav)
+        matches!(
+            self,
+            AudioFormat::Flac | AudioFormat::Alac | AudioFormat::Wav
+        )
     }
 
     pub fn as_str(&self) -> &'static str {

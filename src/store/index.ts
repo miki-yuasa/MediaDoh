@@ -3,8 +3,8 @@
  * Using Zustand for global state management
  */
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   Device,
   PlayerState,
@@ -13,7 +13,7 @@ import type {
   SortConfig,
   ThemePreference,
   ViewMode,
-} from '@/types';
+} from "@/types";
 
 // ============================================================================
 // Player Store
@@ -57,7 +57,7 @@ export const usePlayerStore = create<PlayerStore>()(
       queueIndex: -1,
       volume: 1.0,
       isMuted: false,
-      repeatMode: 'off',
+      repeatMode: "off",
       shuffle: false,
       positionMs: 0,
 
@@ -65,10 +65,10 @@ export const usePlayerStore = create<PlayerStore>()(
       setIsPlaying: (isPlaying) => set({ isPlaying }),
       setIsPaused: (isPaused) => set({ isPaused }),
       setCurrentSong: (song) => set({ currentSong: song }),
-      
+
       setQueue: (songs, startIndex = 0) => {
-        set({ 
-          queue: songs, 
+        set({
+          queue: songs,
           queueIndex: startIndex,
           currentSong: songs[startIndex] || null,
         });
@@ -83,7 +83,7 @@ export const usePlayerStore = create<PlayerStore>()(
         if (shuffle) {
           nextIndex = Math.floor(Math.random() * queue.length);
         } else if (queueIndex >= queue.length - 1) {
-          if (repeatMode === 'all') {
+          if (repeatMode === "all") {
             nextIndex = 0;
           } else {
             return null;
@@ -120,7 +120,7 @@ export const usePlayerStore = create<PlayerStore>()(
       setPosition: (positionMs) => set({ positionMs }),
     }),
     {
-      name: 'mediadoh-player',
+      name: "mediadoh-player",
       partialize: (state) => ({
         volume: state.volume,
         repeatMode: state.repeatMode,
@@ -165,24 +165,25 @@ export const useLibraryStore = create<LibraryStore>()(
       selectedSongIds: new Set(),
       isLoading: false,
       error: null,
-      searchQuery: '',
-      viewMode: 'list',
-      sortConfig: { field: 'title', order: 'ascending' },
+      searchQuery: "",
+      viewMode: "list",
+      sortConfig: { field: "title", order: "ascending" },
 
       // Actions
       setSongs: (songs) => set({ songs }),
-      addSongs: (songs) => set((state) => ({ songs: [...state.songs, ...songs] })),
-      
+      addSongs: (songs) =>
+        set((state) => ({ songs: [...state.songs, ...songs] })),
+
       selectSong: (id, multi = false) => {
         const { selectedSongIds } = get();
         const newSelection = new Set(multi ? selectedSongIds : []);
-        
+
         if (newSelection.has(id)) {
           newSelection.delete(id);
         } else {
           newSelection.add(id);
         }
-        
+
         set({ selectedSongIds: newSelection });
       },
 
@@ -195,7 +196,7 @@ export const useLibraryStore = create<LibraryStore>()(
       setSortConfig: (config) => set({ sortConfig: config }),
     }),
     {
-      name: 'mediadoh-library',
+      name: "mediadoh-library",
       partialize: (state) => ({
         viewMode: state.viewMode,
         sortConfig: state.sortConfig,
@@ -213,7 +214,7 @@ interface UIStore {
   theme: ThemePreference;
   sidebarCollapsed: boolean;
   activeSection: string;
-  
+
   // Actions
   setTheme: (theme: ThemePreference) => void;
   toggleSidebar: () => void;
@@ -224,17 +225,18 @@ export const useUIStore = create<UIStore>()(
   persist(
     (set) => ({
       // Initial state
-      theme: 'system',
+      theme: "system",
       sidebarCollapsed: false,
-      activeSection: 'songs',
+      activeSection: "songs",
 
       // Actions
       setTheme: (theme) => set({ theme }),
-      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      toggleSidebar: () =>
+        set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setActiveSection: (section) => set({ activeSection: section }),
     }),
     {
-      name: 'mediadoh-ui',
+      name: "mediadoh-ui",
     }
   )
 );

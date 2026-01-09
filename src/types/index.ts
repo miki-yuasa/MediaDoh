@@ -4,25 +4,38 @@
  */
 
 // Audio format enum
-export type AudioFormat = 'mp3' | 'flac' | 'alac' | 'aac' | 'wav' | 'ogg' | 'wma' | 'unknown';
+export type AudioFormat =
+  | "mp3"
+  | "flac"
+  | "alac"
+  | "aac"
+  | "wav"
+  | "ogg"
+  | "wma"
+  | "unknown";
 
 // Sync status
-export type SyncStatus = 'not_synced' | 'synced' | 'update_needed' | 'pending' | 'error';
+export type SyncStatus =
+  | "not_synced"
+  | "synced"
+  | "update_needed"
+  | "pending"
+  | "error";
 
 // View mode
-export type ViewMode = 'list' | 'grid';
+export type ViewMode = "list" | "grid";
 
 // Repeat mode
-export type RepeatMode = 'off' | 'all' | 'one';
+export type RepeatMode = "off" | "all" | "one";
 
 // Theme preference
-export type ThemePreference = 'light' | 'dark' | 'system';
+export type ThemePreference = "light" | "dark" | "system";
 
 // Sort order
-export type SortOrder = 'ascending' | 'descending';
+export type SortOrder = "ascending" | "descending";
 
 // Device type
-export type DeviceType = 'walkman_internal' | 'walkman_sdcard' | 'other';
+export type DeviceType = "walkman_internal" | "walkman_sdcard" | "other";
 
 // Song/Track interface
 export interface Song {
@@ -143,22 +156,22 @@ export interface SyncComparison {
 // Sync result for a single file
 export interface SyncResult {
   songId: string;
-  action: 'copy' | 'skip' | 'update' | 'delete';
+  action: "copy" | "skip" | "update" | "delete";
   success: boolean;
   error: string | null;
 }
 
 // Sort options
-export type SortField = 
-  | 'title'
-  | 'artist'
-  | 'album'
-  | 'albumArtist'
-  | 'year'
-  | 'genre'
-  | 'dateAdded'
-  | 'duration'
-  | 'trackNumber';
+export type SortField =
+  | "title"
+  | "artist"
+  | "album"
+  | "albumArtist"
+  | "year"
+  | "genre"
+  | "dateAdded"
+  | "duration"
+  | "trackNumber";
 
 export interface SortConfig {
   field: SortField;

@@ -1,20 +1,20 @@
-import { useTranslation } from 'react-i18next';
-import { 
-  Music, 
-  Disc3, 
-  Users, 
-  ListMusic, 
-  Settings, 
+import { useTranslation } from "react-i18next";
+import {
+  Music,
+  Disc3,
+  Users,
+  ListMusic,
+  Settings,
   Plus,
   HardDrive,
   Smartphone,
   ChevronLeft,
   ChevronRight,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useUIStore, useDeviceStore } from '@/store';
-import { useQuery } from '@tanstack/react-query';
-import { getDevices } from '@/api/tauri';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useUIStore, useDeviceStore } from "@/store";
+import { useQuery } from "@tanstack/react-query";
+import { getDevices } from "@/api/tauri";
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -29,10 +29,7 @@ function SidebarItem({ icon, label, active, onClick }: SidebarItemProps) {
   return (
     <button
       onClick={onClick}
-      className={cn(
-        'sidebar-item w-full',
-        active && 'active'
-      )}
+      className={cn("sidebar-item w-full", active && "active")}
       title={sidebarCollapsed ? label : undefined}
     >
       <span className="flex-shrink-0">{icon}</span>
@@ -41,11 +38,11 @@ function SidebarItem({ icon, label, active, onClick }: SidebarItemProps) {
   );
 }
 
-function SidebarSection({ 
-  title, 
-  children 
-}: { 
-  title: string; 
+function SidebarSection({
+  title,
+  children,
+}: {
+  title: string;
   children: React.ReactNode;
 }) {
   const { sidebarCollapsed } = useUIStore();
@@ -64,12 +61,13 @@ function SidebarSection({
 
 export function Sidebar() {
   const { t } = useTranslation();
-  const { sidebarCollapsed, toggleSidebar, activeSection, setActiveSection } = useUIStore();
+  const { sidebarCollapsed, toggleSidebar, activeSection, setActiveSection } =
+    useUIStore();
   const { devices, setDevices } = useDeviceStore();
 
   // Query devices
   useQuery({
-    queryKey: ['devices'],
+    queryKey: ["devices"],
     queryFn: getDevices,
     onSuccess: setDevices,
     refetchInterval: 5000, // Poll every 5 seconds
@@ -78,8 +76,8 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex flex-col border-r border-border bg-background-secondary transition-all duration-200',
-        sidebarCollapsed ? 'w-14' : 'w-56'
+        "flex flex-col border-r border-border bg-background-secondary transition-all duration-200",
+        sidebarCollapsed ? "w-14" : "w-56"
       )}
     >
       {/* Header */}
@@ -87,13 +85,13 @@ export function Sidebar() {
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2">
             <Disc3 className="w-5 h-5 text-primary" />
-            <span className="font-semibold text-sm">{t('common.appName')}</span>
+            <span className="font-semibold text-sm">{t("common.appName")}</span>
           </div>
         )}
         <button
           onClick={toggleSidebar}
           className="p-1 rounded hover:bg-accent transition-colors"
-          title={sidebarCollapsed ? 'Expand' : 'Collapse'}
+          title={sidebarCollapsed ? "Expand" : "Collapse"}
         >
           {sidebarCollapsed ? (
             <ChevronRight className="w-4 h-4" />
@@ -105,60 +103,60 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2">
-        <SidebarSection title={t('sidebar.library')}>
+        <SidebarSection title={t("sidebar.library")}>
           <SidebarItem
             icon={<Music className="w-4 h-4" />}
-            label={t('sidebar.songs')}
-            active={activeSection === 'songs'}
-            onClick={() => setActiveSection('songs')}
+            label={t("sidebar.songs")}
+            active={activeSection === "songs"}
+            onClick={() => setActiveSection("songs")}
           />
           <SidebarItem
             icon={<Disc3 className="w-4 h-4" />}
-            label={t('sidebar.albums')}
-            active={activeSection === 'albums'}
-            onClick={() => setActiveSection('albums')}
+            label={t("sidebar.albums")}
+            active={activeSection === "albums"}
+            onClick={() => setActiveSection("albums")}
           />
           <SidebarItem
             icon={<Users className="w-4 h-4" />}
-            label={t('sidebar.artists')}
-            active={activeSection === 'artists'}
-            onClick={() => setActiveSection('artists')}
+            label={t("sidebar.artists")}
+            active={activeSection === "artists"}
+            onClick={() => setActiveSection("artists")}
           />
         </SidebarSection>
 
-        <SidebarSection title={t('sidebar.playlists')}>
+        <SidebarSection title={t("sidebar.playlists")}>
           <SidebarItem
             icon={<Plus className="w-4 h-4" />}
-            label={t('sidebar.newPlaylist')}
-            onClick={() => {/* TODO: Create playlist dialog */}}
+            label={t("sidebar.newPlaylist")}
+            onClick={() => {
+              /* TODO: Create playlist dialog */
+            }}
           />
           {/* TODO: List playlists here */}
         </SidebarSection>
 
-        <SidebarSection title={t('sidebar.devices')}>
-          {devices.length === 0 ? (
-            !sidebarCollapsed && (
-              <p className="px-3 py-2 text-xs text-muted-foreground">
-                {t('sidebar.noDevices')}
-              </p>
-            )
-          ) : (
-            devices.map((device) => (
-              <SidebarItem
-                key={device.id}
-                icon={
-                  device.deviceType === 'other' ? (
-                    <HardDrive className="w-4 h-4" />
-                  ) : (
-                    <Smartphone className="w-4 h-4" />
-                  )
-                }
-                label={device.name}
-                active={activeSection === `device-${device.id}`}
-                onClick={() => setActiveSection(`device-${device.id}`)}
-              />
-            ))
-          )}
+        <SidebarSection title={t("sidebar.devices")}>
+          {devices.length === 0
+            ? !sidebarCollapsed && (
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  {t("sidebar.noDevices")}
+                </p>
+              )
+            : devices.map((device) => (
+                <SidebarItem
+                  key={device.id}
+                  icon={
+                    device.deviceType === "other" ? (
+                      <HardDrive className="w-4 h-4" />
+                    ) : (
+                      <Smartphone className="w-4 h-4" />
+                    )
+                  }
+                  label={device.name}
+                  active={activeSection === `device-${device.id}`}
+                  onClick={() => setActiveSection(`device-${device.id}`)}
+                />
+              ))}
         </SidebarSection>
       </nav>
 
@@ -166,9 +164,9 @@ export function Sidebar() {
       <div className="p-2 border-t border-border">
         <SidebarItem
           icon={<Settings className="w-4 h-4" />}
-          label={t('common.settings')}
-          active={activeSection === 'settings'}
-          onClick={() => setActiveSection('settings')}
+          label={t("common.settings")}
+          active={activeSection === "settings"}
+          onClick={() => setActiveSection("settings")}
         />
       </div>
     </aside>

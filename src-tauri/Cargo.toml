@@ -77,7 +77,10 @@ coreaudio-rs = { version = "0.12", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Windows-specific for WASAPI access
-windows = { version = "0.58", features = ["Win32_Media_Audio", "Win32_System_Com"], optional = true }
+windows = { version = "0.58", features = [
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+], optional = true }
 
 [features]
 default = []
@@ -88,4 +91,3 @@ lto = true
 opt-level = 3
 codegen-units = 1
 strip = true
-
