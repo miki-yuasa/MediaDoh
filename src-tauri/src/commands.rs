@@ -8,14 +8,13 @@ use crate::player::{AudioPlayer, PlayerState};
 use crate::scanner::{get_all_songs, scan_directory};
 use crate::sync::{compare_with_device, sync_to_device, SyncComparison, SyncResult};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::Mutex;
 use tauri::State;
-use tokio::sync::Mutex;
 
 /// Application state managed by Tauri
 pub struct AppState {
     pub db: DbPool,
-    pub player: Arc<Mutex<AudioPlayer>>,
+    pub player: Mutex<AudioPlayer>,
 }
 
 // ============================================================================
@@ -73,7 +72,7 @@ pub async fn play_song(
     state: State<'_, AppState>,
 ) -> Result<()> {
     let path = PathBuf::from(file_path);
-    let player = state.player.lock().await;
+    let player = state.player.lock().unwrap();
     player.play(&path)?;
     Ok(())
 }
@@ -81,7 +80,7 @@ pub async fn play_song(
 /// Pause playback
 #[tauri::command]
 pub async fn pause(state: State<'_, AppState>) -> Result<()> {
-    let player = state.player.lock().await;
+    let player = state.player.lock().unwrap();
     player.pause()?;
     Ok(())
 }
@@ -89,7 +88,7 @@ pub async fn pause(state: State<'_, AppState>) -> Result<()> {
 /// Resume playback
 #[tauri::command]
 pub async fn resume(state: State<'_, AppState>) -> Result<()> {
-    let player = state.player.lock().await;
+    let player = state.player.lock().unwrap();
     player.resume()?;
     Ok(())
 }
@@ -97,7 +96,7 @@ pub async fn resume(state: State<'_, AppState>) -> Result<()> {
 /// Stop playback
 #[tauri::command]
 pub async fn stop(state: State<'_, AppState>) -> Result<()> {
-    let player = state.player.lock().await;
+    let player = state.player.lock().unwrap();
     player.stop()?;
     Ok(())
 }
@@ -108,7 +107,7 @@ pub async fn set_volume(
     volume: f32,
     state: State<'_, AppState>,
 ) -> Result<()> {
-    let player = state.player.lock().await;
+    let player = state.player.lock().unwrap();
     player.set_volume(volume)?;
     Ok(())
 }
@@ -116,7 +115,7 @@ pub async fn set_volume(
 /// Get player state
 #[tauri::command]
 pub async fn get_player_state(state: State<'_, AppState>) -> Result<PlayerState> {
-    let player = state.player.lock().await;
+    let player = state.player.lock().unwrap();
     Ok(player.get_state())
 }
 
@@ -126,7 +125,7 @@ pub async fn set_repeat_mode(
     mode: RepeatMode,
     state: State<'_, AppState>,
 ) -> Result<()> {
-    let player = state.player.lock().await;
+    let player = state.player.lock().unwrap();
     player.set_repeat_mode(mode)?;
     Ok(())
 }

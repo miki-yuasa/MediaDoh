@@ -1,9 +1,9 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Music,
   Disc3,
   Users,
-  ListMusic,
   Settings,
   Plus,
   HardDrive,
@@ -63,15 +63,23 @@ export function Sidebar() {
   const { t } = useTranslation();
   const { sidebarCollapsed, toggleSidebar, activeSection, setActiveSection } =
     useUIStore();
-  const { devices, setDevices } = useDeviceStore();
+  const { setDevices } = useDeviceStore();
 
   // Query devices
-  useQuery({
+  const { data: fetchedDevices } = useQuery({
     queryKey: ["devices"],
     queryFn: getDevices,
-    onSuccess: setDevices,
     refetchInterval: 5000, // Poll every 5 seconds
   });
+
+  // Update store when devices are fetched
+  useEffect(() => {
+    if (fetchedDevices) {
+      setDevices(fetchedDevices);
+    }
+  }, [fetchedDevices, setDevices]);
+
+  const devices = fetchedDevices || [];
 
   return (
     <aside
@@ -101,8 +109,9 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-2">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto py-2">
+        {/* Library Section */}
         <SidebarSection title={t("sidebar.library")}>
           <SidebarItem
             icon={<Music className="w-4 h-4" />}
@@ -124,47 +133,48 @@ export function Sidebar() {
           />
         </SidebarSection>
 
+        {/* Playlists Section */}
         <SidebarSection title={t("sidebar.playlists")}>
           <SidebarItem
             icon={<Plus className="w-4 h-4" />}
             label={t("sidebar.newPlaylist")}
             onClick={() => {
-              /* TODO: Create playlist dialog */
+              // TODO: Open create playlist dialog
             }}
           />
-          {/* TODO: List playlists here */}
         </SidebarSection>
 
+        {/* Devices Section */}
         <SidebarSection title={t("sidebar.devices")}>
-          {devices.length === 0
-            ? !sidebarCollapsed && (
-                <p className="px-3 py-2 text-xs text-muted-foreground">
-                  {t("sidebar.noDevices")}
-                </p>
-              )
-            : devices.map((device) => (
-                <SidebarItem
-                  key={device.id}
-                  icon={
-                    device.deviceType === "other" ? (
-                      <HardDrive className="w-4 h-4" />
-                    ) : (
-                      <Smartphone className="w-4 h-4" />
-                    )
-                  }
-                  label={device.name}
-                  active={activeSection === `device-${device.id}`}
-                  onClick={() => setActiveSection(`device-${device.id}`)}
-                />
-              ))}
+          {devices.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              {!sidebarCollapsed && t("sidebar.noDevices")}
+            </div>
+          ) : (
+            devices.map((device) => (
+              <SidebarItem
+                key={device.id}
+                icon={
+                  device.deviceType === "walkman_internal" || device.deviceType === "walkman_sdcard" ? (
+                    <Smartphone className="w-4 h-4" />
+                  ) : (
+                    <HardDrive className="w-4 h-4" />
+                  )
+                }
+                label={device.name}
+                active={activeSection === `device-${device.id}`}
+                onClick={() => setActiveSection(`device-${device.id}`)}
+              />
+            ))
+          )}
         </SidebarSection>
-      </nav>
+      </div>
 
       {/* Footer */}
-      <div className="p-2 border-t border-border">
+      <div className="border-t border-border p-2">
         <SidebarItem
           icon={<Settings className="w-4 h-4" />}
-          label={t("common.settings")}
+          label={t("sidebar.settings")}
           active={activeSection === "settings"}
           onClick={() => setActiveSection("settings")}
         />

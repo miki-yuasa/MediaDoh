@@ -7,7 +7,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   Device,
-  PlayerState,
   RepeatMode,
   Song,
   SortConfig,
@@ -139,6 +138,7 @@ interface LibraryStore {
   songs: Song[];
   selectedSongIds: Set<string>;
   isLoading: boolean;
+  isScanning: boolean;
   error: string | null;
   searchQuery: string;
   viewMode: ViewMode;
@@ -147,10 +147,11 @@ interface LibraryStore {
   // Actions
   setSongs: (songs: Song[]) => void;
   addSongs: (songs: Song[]) => void;
-  selectSong: (id: string, multi?: boolean) => void;
+  selectSong: (id: string, options?: { multi?: boolean; range?: boolean }) => void;
   selectSongs: (ids: string[]) => void;
   clearSelection: () => void;
   setLoading: (isLoading: boolean) => void;
+  setIsScanning: (isScanning: boolean) => void;
   setError: (error: string | null) => void;
   setSearchQuery: (query: string) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -164,6 +165,7 @@ export const useLibraryStore = create<LibraryStore>()(
       songs: [],
       selectedSongIds: new Set(),
       isLoading: false,
+      isScanning: false,
       error: null,
       searchQuery: "",
       viewMode: "list",
@@ -174,7 +176,8 @@ export const useLibraryStore = create<LibraryStore>()(
       addSongs: (songs) =>
         set((state) => ({ songs: [...state.songs, ...songs] })),
 
-      selectSong: (id, multi = false) => {
+      selectSong: (id, options = {}) => {
+        const { multi = false } = options;
         const { selectedSongIds } = get();
         const newSelection = new Set(multi ? selectedSongIds : []);
 
@@ -190,6 +193,7 @@ export const useLibraryStore = create<LibraryStore>()(
       selectSongs: (ids) => set({ selectedSongIds: new Set(ids) }),
       clearSelection: () => set({ selectedSongIds: new Set() }),
       setLoading: (isLoading) => set({ isLoading }),
+      setIsScanning: (isScanning) => set({ isScanning }),
       setError: (error) => set({ error }),
       setSearchQuery: (query) => set({ searchQuery: query }),
       setViewMode: (mode) => set({ viewMode: mode }),
@@ -214,11 +218,13 @@ interface UIStore {
   theme: ThemePreference;
   sidebarCollapsed: boolean;
   activeSection: string;
+  viewMode: ViewMode;
 
   // Actions
   setTheme: (theme: ThemePreference) => void;
   toggleSidebar: () => void;
   setActiveSection: (section: string) => void;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 export const useUIStore = create<UIStore>()(
@@ -228,12 +234,14 @@ export const useUIStore = create<UIStore>()(
       theme: "system",
       sidebarCollapsed: false,
       activeSection: "songs",
+      viewMode: "list",
 
       // Actions
       setTheme: (theme) => set({ theme }),
       toggleSidebar: () =>
         set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setActiveSection: (section) => set({ activeSection: section }),
+      setViewMode: (mode) => set({ viewMode: mode }),
     }),
     {
       name: "mediadoh-ui",

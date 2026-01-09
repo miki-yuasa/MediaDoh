@@ -52,19 +52,7 @@
   },
   "plugins": {
     "fs": {
-      "scope": {
-        "allow": [
-          "$AUDIO/**",
-          "$HOME/**",
-          "$DOCUMENT/**",
-          "$DOWNLOAD/**",
-          "$DESKTOP/**",
-          "/Volumes/**",
-          "/media/**",
-          "/mnt/**",
-          "/run/media/**"
-        ]
-      }
+      "requireLiteralLeadingDot": false
     }
   }
 }

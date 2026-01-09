@@ -15,8 +15,8 @@ pub mod sync;
 use commands::AppState;
 use database::{get_app_data_dir, init_database};
 use player::AudioPlayer;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -48,7 +48,7 @@ pub fn run() {
             // Create app state
             let state = AppState {
                 db,
-                player: Arc::new(Mutex::new(player)),
+                player: Mutex::new(player),
             };
 
             app.manage(state);
