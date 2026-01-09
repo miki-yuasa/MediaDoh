@@ -147,7 +147,10 @@ interface LibraryStore {
   // Actions
   setSongs: (songs: Song[]) => void;
   addSongs: (songs: Song[]) => void;
-  selectSong: (id: string, options?: { multi?: boolean; range?: boolean }) => void;
+  selectSong: (
+    id: string,
+    options?: { multi?: boolean; range?: boolean }
+  ) => void;
   selectSongs: (ids: string[]) => void;
   clearSelection: () => void;
   setLoading: (isLoading: boolean) => void;

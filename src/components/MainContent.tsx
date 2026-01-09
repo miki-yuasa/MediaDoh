@@ -1,21 +1,21 @@
-import { useMemo, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { debounce } from 'lodash-es';
-import { 
-  Search, 
-  FolderPlus, 
-  RefreshCw, 
-  LayoutList, 
-  LayoutGrid 
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useUIStore, useLibraryStore } from '@/store';
-import { open } from '@tauri-apps/plugin-dialog';
-import { scanLibrary } from '@/api/tauri';
-import { useQueryClient } from '@tanstack/react-query';
-import { SongList } from './SongList';
-import { AlbumGrid } from './AlbumGrid';
-import { SettingsPanel } from './SettingsPanel';
+import { useMemo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
+import { debounce } from "lodash-es";
+import {
+  Search,
+  FolderPlus,
+  RefreshCw,
+  LayoutList,
+  LayoutGrid,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useUIStore, useLibraryStore } from "@/store";
+import { open } from "@tauri-apps/plugin-dialog";
+import { scanLibrary } from "@/api/tauri";
+import { useQueryClient } from "@tanstack/react-query";
+import { SongList } from "./SongList";
+import { AlbumGrid } from "./AlbumGrid";
+import { SettingsPanel } from "./SettingsPanel";
 
 export function MainContent() {
   const { t } = useTranslation();
@@ -41,50 +41,50 @@ export function MainContent() {
       const selected = await open({
         multiple: false,
         directory: true,
-        title: t('library.selectFolder'),
+        title: t("library.selectFolder"),
       });
 
       if (selected) {
         setIsScanning(true);
         await scanLibrary(selected as string);
-        await queryClient.invalidateQueries({ queryKey: ['songs'] });
+        await queryClient.invalidateQueries({ queryKey: ["songs"] });
         setIsScanning(false);
       }
     } catch (error) {
-      console.error('Failed to scan folder:', error);
+      console.error("Failed to scan folder:", error);
       setIsScanning(false);
     }
   }, [t, setIsScanning, queryClient]);
 
   // Render content based on active section
   const renderContent = () => {
-    if (activeSection === 'settings') {
+    if (activeSection === "settings") {
       return <SettingsPanel />;
     }
 
     // Check if viewing a device
-    if (activeSection.startsWith('device-')) {
+    if (activeSection.startsWith("device-")) {
       return (
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          <p>{t('common.comingSoon')}</p>
+          <p>{t("common.comingSoon")}</p>
         </div>
       );
     }
 
     // Library views
     switch (activeSection) {
-      case 'songs':
-        return viewMode === 'list' ? <SongList /> : <AlbumGrid />;
-      case 'albums':
+      case "songs":
+        return viewMode === "list" ? <SongList /> : <AlbumGrid />;
+      case "albums":
         return <AlbumGrid />;
-      case 'artists':
+      case "artists":
         return (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <p>{t('common.comingSoon')}</p>
+            <p>{t("common.comingSoon")}</p>
           </div>
         );
       default:
-        return viewMode === 'list' ? <SongList /> : <AlbumGrid />;
+        return viewMode === "list" ? <SongList /> : <AlbumGrid />;
     }
   };
 
@@ -97,7 +97,7 @@ export function MainContent() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder={t('library.search')}
+            placeholder={t("library.search")}
             onChange={handleSearchChange}
             className="w-full h-8 pl-8 pr-3 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
           />
@@ -111,10 +111,10 @@ export function MainContent() {
           onClick={handleScanFolder}
           disabled={isScanning}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors',
-            'hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed'
+            "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
+            "hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
           )}
-          title={t('library.addFolder')}
+          title={t("library.addFolder")}
         >
           {isScanning ? (
             <RefreshCw className="w-4 h-4 animate-spin" />
@@ -122,34 +122,34 @@ export function MainContent() {
             <FolderPlus className="w-4 h-4" />
           )}
           <span className="hidden sm:inline">
-            {isScanning ? t('library.scanning') : t('library.addFolder')}
+            {isScanning ? t("library.scanning") : t("library.addFolder")}
           </span>
         </button>
 
         {/* View Mode Toggle */}
-        {activeSection !== 'settings' && (
+        {activeSection !== "settings" && (
           <div className="flex items-center border border-border rounded-md overflow-hidden">
             <button
-              onClick={() => setViewMode('list')}
+              onClick={() => setViewMode("list")}
               className={cn(
-                'p-1.5 transition-colors',
-                viewMode === 'list'
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/50'
+                "p-1.5 transition-colors",
+                viewMode === "list"
+                  ? "bg-accent text-accent-foreground"
+                  : "hover:bg-accent/50"
               )}
-              title={t('view.list')}
+              title={t("view.list")}
             >
               <LayoutList className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setViewMode('grid')}
+              onClick={() => setViewMode("grid")}
               className={cn(
-                'p-1.5 transition-colors',
-                viewMode === 'grid'
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/50'
+                "p-1.5 transition-colors",
+                viewMode === "grid"
+                  ? "bg-accent text-accent-foreground"
+                  : "hover:bg-accent/50"
               )}
-              title={t('view.grid')}
+              title={t("view.grid")}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>

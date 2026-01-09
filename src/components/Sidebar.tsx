@@ -155,7 +155,8 @@ export function Sidebar() {
               <SidebarItem
                 key={device.id}
                 icon={
-                  device.deviceType === "walkman_internal" || device.deviceType === "walkman_sdcard" ? (
+                  device.deviceType === "walkman_internal" ||
+                  device.deviceType === "walkman_sdcard" ? (
                     <Smartphone className="w-4 h-4" />
                   ) : (
                     <HardDrive className="w-4 h-4" />

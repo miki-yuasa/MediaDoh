@@ -1,13 +1,13 @@
-import { useMemo, useCallback, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Grid, CellComponentProps } from 'react-window';
-import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { Disc3 } from 'lucide-react';
-import { formatDuration } from '@/lib/utils';
-import { useLibraryStore } from '@/store';
-import { useQuery } from '@tanstack/react-query';
-import { getSongs } from '@/api/tauri';
-import type { Album, Song } from '@/types';
+import { useMemo, useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { Grid, CellComponentProps } from "react-window";
+import { AutoSizer } from "react-virtualized-auto-sizer";
+import { Disc3 } from "lucide-react";
+import { formatDuration } from "@/lib/utils";
+import { useLibraryStore } from "@/store";
+import { useQuery } from "@tanstack/react-query";
+import { getSongs } from "@/api/tauri";
+import type { Album, Song } from "@/types";
 
 const CARD_WIDTH = 180;
 const CARD_HEIGHT = 220;
@@ -17,12 +17,12 @@ function songsToAlbums(songs: Song[]): Album[] {
   const albumMap = new Map<string, Album>();
 
   for (const song of songs) {
-    const key = `${song.albumArtist || song.artist || ''}-${song.album || ''}`;
-    
+    const key = `${song.albumArtist || song.artist || ""}-${song.album || ""}`;
+
     if (!albumMap.has(key)) {
       albumMap.set(key, {
         id: key,
-        title: song.album || 'Unknown Album',
+        title: song.album || "Unknown Album",
         artist: song.artist,
         albumArtist: song.albumArtist,
         year: song.year,
@@ -43,8 +43,10 @@ function songsToAlbums(songs: Song[]): Album[] {
     }
   }
 
-  return Array.from(albumMap.values()).sort((a, b) => 
-    (a.albumArtist || a.artist || '').localeCompare(b.albumArtist || b.artist || '')
+  return Array.from(albumMap.values()).sort((a, b) =>
+    (a.albumArtist || a.artist || "").localeCompare(
+      b.albumArtist || b.artist || ""
+    )
   );
 }
 
@@ -74,8 +76,11 @@ function AlbumCard({ album, onClick }: AlbumCardProps) {
         <p className="text-sm font-medium truncate" title={album.title}>
           {album.title}
         </p>
-        <p className="text-xs text-muted-foreground truncate" title={album.albumArtist || album.artist || ''}>
-          {album.albumArtist || album.artist || 'Unknown Artist'}
+        <p
+          className="text-xs text-muted-foreground truncate"
+          title={album.albumArtist || album.artist || ""}
+        >
+          {album.albumArtist || album.artist || "Unknown Artist"}
         </p>
         <p className="text-xs text-muted-foreground">
           {album.trackCount} tracks • {formatDuration(album.totalDurationMs)}
@@ -92,19 +97,26 @@ interface CellData {
 }
 
 // Cell component for react-window v2
-function VirtualCell({ columnIndex, rowIndex, style, ...cellProps }: CellComponentProps<CellData>) {
+function VirtualCell({
+  columnIndex,
+  rowIndex,
+  style,
+  ...cellProps
+}: CellComponentProps<CellData>) {
   const { albums, columnCount, handleClick } = cellProps;
   const index = rowIndex * columnCount + columnIndex;
-  
+
   if (index >= albums.length) return <div style={style} />;
 
   const album = albums[index];
 
   return (
-    <div style={{
-      ...style,
-      padding: GAP / 2,
-    }}>
+    <div
+      style={{
+        ...style,
+        padding: GAP / 2,
+      }}
+    >
       <AlbumCard album={album} onClick={() => handleClick(album)} />
     </div>
   );
@@ -115,7 +127,7 @@ export function AlbumGrid() {
   const { songs, setSongs, searchQuery } = useLibraryStore();
 
   const { data: fetchedSongs } = useQuery({
-    queryKey: ['songs'],
+    queryKey: ["songs"],
     queryFn: getSongs,
   });
 
@@ -142,15 +154,15 @@ export function AlbumGrid() {
   }, [songs, searchQuery]);
 
   const handleAlbumClick = useCallback((album: Album) => {
-    console.log('Album clicked:', album);
+    console.log("Album clicked:", album);
   }, []);
 
   if (songs.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
         <Disc3 className="w-16 h-16 text-muted-foreground/50 mb-4" />
-        <h2 className="text-lg font-medium mb-2">{t('library.noSongs')}</h2>
-        <p className="text-sm text-muted-foreground">{t('library.addMusic')}</p>
+        <h2 className="text-lg font-medium mb-2">{t("library.noSongs")}</h2>
+        <p className="text-sm text-muted-foreground">{t("library.addMusic")}</p>
       </div>
     );
   }
@@ -161,8 +173,11 @@ export function AlbumGrid() {
         <AutoSizer
           renderProp={({ height, width }) => {
             if (!height || !width) return null;
-            
-            const columnCount = Math.max(1, Math.floor((width - GAP) / (CARD_WIDTH + GAP)));
+
+            const columnCount = Math.max(
+              1,
+              Math.floor((width - GAP) / (CARD_WIDTH + GAP))
+            );
             const rowCount = Math.ceil(albums.length / columnCount);
 
             return (

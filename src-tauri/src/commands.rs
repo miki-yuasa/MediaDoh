@@ -23,10 +23,7 @@ pub struct AppState {
 
 /// Scan a directory for music files
 #[tauri::command]
-pub async fn scan_library(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<Song>> {
+pub async fn scan_library(path: String, state: State<'_, AppState>) -> Result<Vec<Song>> {
     let path = PathBuf::from(path);
     let songs = scan_directory(&path, &state.db).await?;
     Ok(songs)
@@ -41,10 +38,7 @@ pub async fn get_songs(state: State<'_, AppState>) -> Result<Vec<Song>> {
 
 /// Search songs by query
 #[tauri::command]
-pub async fn search_songs(
-    query: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<Song>> {
+pub async fn search_songs(query: String, state: State<'_, AppState>) -> Result<Vec<Song>> {
     let all_songs = get_all_songs(&state.db).await?;
     let query_lower = query.to_lowercase();
 
@@ -52,9 +46,21 @@ pub async fn search_songs(
         .into_iter()
         .filter(|song| {
             song.title.to_lowercase().contains(&query_lower)
-                || song.artist.as_ref().map(|a| a.to_lowercase().contains(&query_lower)).unwrap_or(false)
-                || song.album.as_ref().map(|a| a.to_lowercase().contains(&query_lower)).unwrap_or(false)
-                || song.album_artist.as_ref().map(|a| a.to_lowercase().contains(&query_lower)).unwrap_or(false)
+                || song
+                    .artist
+                    .as_ref()
+                    .map(|a| a.to_lowercase().contains(&query_lower))
+                    .unwrap_or(false)
+                || song
+                    .album
+                    .as_ref()
+                    .map(|a| a.to_lowercase().contains(&query_lower))
+                    .unwrap_or(false)
+                || song
+                    .album_artist
+                    .as_ref()
+                    .map(|a| a.to_lowercase().contains(&query_lower))
+                    .unwrap_or(false)
         })
         .collect();
 
@@ -67,10 +73,7 @@ pub async fn search_songs(
 
 /// Play a song by file path
 #[tauri::command]
-pub async fn play_song(
-    file_path: String,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn play_song(file_path: String, state: State<'_, AppState>) -> Result<()> {
     let path = PathBuf::from(file_path);
     let player = state.player.lock().unwrap();
     player.play(&path)?;
@@ -103,10 +106,7 @@ pub async fn stop(state: State<'_, AppState>) -> Result<()> {
 
 /// Set volume
 #[tauri::command]
-pub async fn set_volume(
-    volume: f32,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn set_volume(volume: f32, state: State<'_, AppState>) -> Result<()> {
     let player = state.player.lock().unwrap();
     player.set_volume(volume)?;
     Ok(())
@@ -121,10 +121,7 @@ pub async fn get_player_state(state: State<'_, AppState>) -> Result<PlayerState>
 
 /// Set repeat mode
 #[tauri::command]
-pub async fn set_repeat_mode(
-    mode: RepeatMode,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn set_repeat_mode(mode: RepeatMode, state: State<'_, AppState>) -> Result<()> {
     let player = state.player.lock().unwrap();
     player.set_repeat_mode(mode)?;
     Ok(())
@@ -170,10 +167,7 @@ pub async fn sync_songs(
 
 /// Get a setting value
 #[tauri::command]
-pub async fn get_setting(
-    key: String,
-    state: State<'_, AppState>,
-) -> Result<Option<String>> {
+pub async fn get_setting(key: String, state: State<'_, AppState>) -> Result<Option<String>> {
     let result = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
         .bind(&key)
         .fetch_optional(&state.db)
@@ -184,16 +178,12 @@ pub async fn get_setting(
 
 /// Set a setting value
 #[tauri::command]
-pub async fn set_setting(
-    key: String,
-    value: String,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn set_setting(key: String, value: String, state: State<'_, AppState>) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
 
     sqlx::query(
         "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
+         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?",
     )
     .bind(&key)
     .bind(&value)
@@ -219,10 +209,7 @@ pub async fn get_theme(state: State<'_, AppState>) -> Result<ThemePreference> {
 
 /// Set theme preference
 #[tauri::command]
-pub async fn set_theme(
-    theme: ThemePreference,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn set_theme(theme: ThemePreference, state: State<'_, AppState>) -> Result<()> {
     let value = match theme {
         ThemePreference::Light => "light",
         ThemePreference::Dark => "dark",
@@ -243,10 +230,7 @@ pub async fn get_view_mode(state: State<'_, AppState>) -> Result<ViewMode> {
 
 /// Set view mode
 #[tauri::command]
-pub async fn set_view_mode(
-    mode: ViewMode,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub async fn set_view_mode(mode: ViewMode, state: State<'_, AppState>) -> Result<()> {
     let value = match mode {
         ViewMode::List => "list",
         ViewMode::Grid => "grid",

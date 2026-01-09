@@ -1,13 +1,13 @@
-import { useCallback, useMemo, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { List, RowComponentProps } from 'react-window';
-import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { Check, AlertCircle, Music } from 'lucide-react';
-import { cn, formatDuration } from '@/lib/utils';
-import { useLibraryStore, usePlayerStore } from '@/store';
-import { useQuery } from '@tanstack/react-query';
-import { getSongs, playSong } from '@/api/tauri';
-import type { Song, SongGroup } from '@/types';
+import { useCallback, useMemo, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { List, RowComponentProps } from "react-window";
+import { AutoSizer } from "react-virtualized-auto-sizer";
+import { Check, AlertCircle, Music } from "lucide-react";
+import { cn, formatDuration } from "@/lib/utils";
+import { useLibraryStore, usePlayerStore } from "@/store";
+import { useQuery } from "@tanstack/react-query";
+import { getSongs, playSong } from "@/api/tauri";
+import type { Song, SongGroup } from "@/types";
 
 const ROW_HEIGHT = 32;
 
@@ -28,19 +28,19 @@ interface SongRowProps {
   onDoubleClick: () => void;
 }
 
-function SongRow({ 
-  song, 
-  showAlbumArt, 
-  isSelected, 
+function SongRow({
+  song,
+  showAlbumArt,
+  isSelected,
   isPlaying,
   onClick,
   onDoubleClick,
 }: SongRowProps) {
   const SyncIndicator = () => {
     switch (song.syncStatus) {
-      case 'synced':
+      case "synced":
         return <Check className="w-3 h-3 text-synced" />;
-      case 'update_needed':
+      case "update_needed":
         return <AlertCircle className="w-3 h-3 text-sync-warning" />;
       default:
         return <span className="w-3 h-3" />;
@@ -50,9 +50,9 @@ function SongRow({
   return (
     <div
       className={cn(
-        'song-row',
-        isSelected && 'selected',
-        isPlaying && 'playing'
+        "song-row",
+        isSelected && "selected",
+        isPlaying && "playing"
       )}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -73,14 +73,14 @@ function SongRow({
         ) : null}
       </div>
       <span className="w-8 text-xs text-muted-foreground text-right flex-shrink-0">
-        {song.trackNumber || '-'}
+        {song.trackNumber || "-"}
       </span>
       <span className="flex-1 min-w-0 px-2 truncate">{song.title}</span>
       <span className="w-40 px-2 truncate text-muted-foreground">
-        {song.artist || '-'}
+        {song.artist || "-"}
       </span>
       <span className="w-40 px-2 truncate text-muted-foreground">
-        {song.album || '-'}
+        {song.album || "-"}
       </span>
       <span className="w-14 text-right flex-shrink-0 text-muted-foreground tabular-nums">
         {formatDuration(song.durationMs)}
@@ -103,15 +103,17 @@ function groupSongsByAlbum(songs: Song[]): SongGroup[] {
   let currentArtPath: string | null = null;
 
   for (const song of songs) {
-    const albumKey = `${song.albumArtist || song.artist || ''}-${song.album || ''}`;
-    
+    const albumKey = `${song.albumArtist || song.artist || ""}-${
+      song.album || ""
+    }`;
+
     if (albumKey !== currentAlbum) {
       if (currentGroup.length > 0) {
-        groups.push({ 
-          album: currentAlbum || 'Unknown Album', 
+        groups.push({
+          album: currentAlbum || "Unknown Album",
           albumArtist: currentAlbumArtist,
           artCachePath: currentArtPath,
-          songs: currentGroup 
+          songs: currentGroup,
         });
       }
       currentAlbum = albumKey;
@@ -124,11 +126,11 @@ function groupSongsByAlbum(songs: Song[]): SongGroup[] {
   }
 
   if (currentGroup.length > 0) {
-    groups.push({ 
-      album: currentAlbum || 'Unknown Album', 
+    groups.push({
+      album: currentAlbum || "Unknown Album",
       albumArtist: currentAlbumArtist,
       artCachePath: currentArtPath,
-      songs: currentGroup 
+      songs: currentGroup,
     });
   }
 
@@ -136,7 +138,11 @@ function groupSongsByAlbum(songs: Song[]): SongGroup[] {
 }
 
 // Row component for react-window v2
-function VirtualRow({ index, style, ...rowProps }: RowComponentProps<SongRowData>) {
+function VirtualRow({
+  index,
+  style,
+  ...rowProps
+}: RowComponentProps<SongRowData>) {
   const item = rowProps.items[index];
   if (!item) return <div style={style} />;
 
@@ -160,20 +166,21 @@ function VirtualRow({ index, style, ...rowProps }: RowComponentProps<SongRowData
 
 export function SongList() {
   const { t } = useTranslation();
-  
-  const { 
-    songs, 
-    setSongs, 
-    selectedSongIds, 
-    selectSong, 
+
+  const {
+    songs,
+    setSongs,
+    selectedSongIds,
+    selectSong,
     searchQuery,
     sortConfig,
   } = useLibraryStore();
-  
-  const { currentSong, setQueue, setCurrentSong, setIsPlaying } = usePlayerStore();
+
+  const { currentSong, setQueue, setCurrentSong, setIsPlaying } =
+    usePlayerStore();
 
   const { data: fetchedSongs } = useQuery({
-    queryKey: ['songs'],
+    queryKey: ["songs"],
     queryFn: getSongs,
   });
 
@@ -206,25 +213,28 @@ export function SongList() {
       if (bValue == null) return -1;
 
       let comparison: number;
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
+      if (typeof aValue === "string" && typeof bValue === "string") {
         comparison = aValue.localeCompare(bValue);
-      } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+      } else if (typeof aValue === "number" && typeof bValue === "number") {
         comparison = aValue - bValue;
       } else {
         comparison = String(aValue).localeCompare(String(bValue));
       }
 
-      return sortConfig.order === 'ascending' ? comparison : -comparison;
+      return sortConfig.order === "ascending" ? comparison : -comparison;
     });
 
     return result;
   }, [songs, searchQuery, sortConfig]);
 
-  const songGroups = useMemo(() => groupSongsByAlbum(filteredSongs), [filteredSongs]);
+  const songGroups = useMemo(
+    () => groupSongsByAlbum(filteredSongs),
+    [filteredSongs]
+  );
 
   const flattenedList = useMemo(() => {
     const items: Array<{ song: Song; showAlbumArt: boolean }> = [];
-    
+
     for (const group of songGroups) {
       group.songs.forEach((song, index) => {
         items.push({
@@ -237,41 +247,56 @@ export function SongList() {
     return items;
   }, [songGroups]);
 
-  const handleSongClick = useCallback((e: React.MouseEvent, songId: string) => {
-    selectSong(songId, {
-      multi: e.metaKey || e.ctrlKey,
-    });
-  }, [selectSong]);
+  const handleSongClick = useCallback(
+    (e: React.MouseEvent, songId: string) => {
+      selectSong(songId, {
+        multi: e.metaKey || e.ctrlKey,
+      });
+    },
+    [selectSong]
+  );
 
-  const handleSongDoubleClick = useCallback(async (song: Song) => {
-    const songIndex = filteredSongs.findIndex(s => s.id === song.id);
-    const queue = filteredSongs.slice(songIndex);
-    
-    setQueue(queue);
-    setCurrentSong(queue[0]);
-    setIsPlaying(true);
+  const handleSongDoubleClick = useCallback(
+    async (song: Song) => {
+      const songIndex = filteredSongs.findIndex((s) => s.id === song.id);
+      const queue = filteredSongs.slice(songIndex);
 
-    try {
-      await playSong(song.filePath);
-    } catch (error) {
-      console.error('Failed to play song:', error);
-    }
-  }, [filteredSongs, setQueue, setCurrentSong, setIsPlaying]);
+      setQueue(queue);
+      setCurrentSong(queue[0]);
+      setIsPlaying(true);
 
-  const rowData: SongRowData = useMemo(() => ({
-    items: flattenedList,
-    selectedSongIds,
-    currentSongId: currentSong?.id || null,
-    onSongClick: handleSongClick,
-    onSongDoubleClick: handleSongDoubleClick,
-  }), [flattenedList, selectedSongIds, currentSong, handleSongClick, handleSongDoubleClick]);
+      try {
+        await playSong(song.filePath);
+      } catch (error) {
+        console.error("Failed to play song:", error);
+      }
+    },
+    [filteredSongs, setQueue, setCurrentSong, setIsPlaying]
+  );
+
+  const rowData: SongRowData = useMemo(
+    () => ({
+      items: flattenedList,
+      selectedSongIds,
+      currentSongId: currentSong?.id || null,
+      onSongClick: handleSongClick,
+      onSongDoubleClick: handleSongDoubleClick,
+    }),
+    [
+      flattenedList,
+      selectedSongIds,
+      currentSong,
+      handleSongClick,
+      handleSongDoubleClick,
+    ]
+  );
 
   if (songs.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
         <Music className="w-16 h-16 mb-4" />
-        <h2 className="text-lg font-medium mb-2">{t('library.noSongs')}</h2>
-        <p className="text-sm text-muted-foreground">{t('library.addMusic')}</p>
+        <h2 className="text-lg font-medium mb-2">{t("library.noSongs")}</h2>
+        <p className="text-sm text-muted-foreground">{t("library.addMusic")}</p>
       </div>
     );
   }
@@ -282,12 +307,18 @@ export function SongList() {
       <div className="flex items-center px-2 py-1.5 border-b border-border bg-background-secondary text-xs font-medium text-muted-foreground">
         <span className="w-8 flex-shrink-0" />
         <span className="w-8 text-right flex-shrink-0">#</span>
-        <span className="flex-1 px-2">{t('view.columns.title')}</span>
-        <span className="w-40 px-2">{t('view.columns.artist')}</span>
-        <span className="w-40 px-2">{t('view.columns.album')}</span>
-        <span className="w-14 text-right flex-shrink-0">{t('view.columns.duration')}</span>
-        <span className="w-12 text-center flex-shrink-0">{t('view.columns.format')}</span>
-        <span className="w-6 text-center flex-shrink-0">{t('view.columns.syncStatus')}</span>
+        <span className="flex-1 px-2">{t("view.columns.title")}</span>
+        <span className="w-40 px-2">{t("view.columns.artist")}</span>
+        <span className="w-40 px-2">{t("view.columns.album")}</span>
+        <span className="w-14 text-right flex-shrink-0">
+          {t("view.columns.duration")}
+        </span>
+        <span className="w-12 text-center flex-shrink-0">
+          {t("view.columns.format")}
+        </span>
+        <span className="w-6 text-center flex-shrink-0">
+          {t("view.columns.syncStatus")}
+        </span>
       </div>
 
       {/* Virtualized List */}
@@ -311,7 +342,7 @@ export function SongList() {
 
       {/* Status Bar */}
       <div className="px-3 py-1.5 border-t border-border bg-background-secondary text-xs text-muted-foreground">
-        {t('library.songs', { count: filteredSongs.length })}
+        {t("library.songs", { count: filteredSongs.length })}
         {searchQuery && ` (filtered from ${songs.length})`}
       </div>
     </div>

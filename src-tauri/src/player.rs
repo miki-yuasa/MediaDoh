@@ -66,21 +66,19 @@ impl AudioPlayer {
                             Ok(file) => {
                                 let reader = BufReader::new(file);
                                 match Decoder::new(reader) {
-                                    Ok(source) => {
-                                        match Sink::try_new(&stream_handle) {
-                                            Ok(new_sink) => {
-                                                let vol = *volume_clone.lock().unwrap();
-                                                new_sink.set_volume(vol);
-                                                new_sink.append(source);
-                                                *is_playing_clone.lock().unwrap() = true;
-                                                *is_paused_clone.lock().unwrap() = false;
-                                                sink = Some(new_sink);
-                                            }
-                                            Err(e) => {
-                                                log::error!("Failed to create sink: {}", e);
-                                            }
+                                    Ok(source) => match Sink::try_new(&stream_handle) {
+                                        Ok(new_sink) => {
+                                            let vol = *volume_clone.lock().unwrap();
+                                            new_sink.set_volume(vol);
+                                            new_sink.append(source);
+                                            *is_playing_clone.lock().unwrap() = true;
+                                            *is_paused_clone.lock().unwrap() = false;
+                                            sink = Some(new_sink);
                                         }
-                                    }
+                                        Err(e) => {
+                                            log::error!("Failed to create sink: {}", e);
+                                        }
+                                    },
                                     Err(e) => {
                                         log::error!("Failed to decode audio: {}", e);
                                     }
@@ -149,9 +147,9 @@ impl AudioPlayer {
 
     /// Resume playback
     pub fn resume(&self) -> Result<()> {
-        self.command_tx
-            .send(PlayerCommand::Resume)
-            .map_err(|e| MediaDohError::Playback(format!("Failed to send resume command: {}", e)))?;
+        self.command_tx.send(PlayerCommand::Resume).map_err(|e| {
+            MediaDohError::Playback(format!("Failed to send resume command: {}", e))
+        })?;
         Ok(())
     }
 
@@ -169,7 +167,9 @@ impl AudioPlayer {
         let volume = volume.clamp(0.0, 1.0);
         self.command_tx
             .send(PlayerCommand::SetVolume(volume))
-            .map_err(|e| MediaDohError::Playback(format!("Failed to send volume command: {}", e)))?;
+            .map_err(|e| {
+                MediaDohError::Playback(format!("Failed to send volume command: {}", e))
+            })?;
         Ok(())
     }
 
@@ -233,7 +233,9 @@ impl AudioPlayer {
         PlayerState {
             is_playing: self.is_playing(),
             is_paused: self.is_paused(),
-            current_file: self.get_current_file().map(|p| p.to_string_lossy().to_string()),
+            current_file: self
+                .get_current_file()
+                .map(|p| p.to_string_lossy().to_string()),
             position_ms: self.get_position_ms(),
             volume: self.get_volume(),
             repeat_mode: self.get_repeat_mode(),
