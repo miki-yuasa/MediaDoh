@@ -1,6 +1,6 @@
 //! MediaDoh - Device detection module for Walkman and external storage
 
-use crate::error::{MediaDohError, Result};
+use crate::error::Result;
 use crate::models::{Device, DeviceType};
 use chrono::Utc;
 use std::path::PathBuf;

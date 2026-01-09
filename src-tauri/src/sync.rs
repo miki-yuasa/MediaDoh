@@ -1,13 +1,12 @@
 //! MediaDoh - Walkman synchronization module
 
 use crate::database::DbPool;
-use crate::devices::{detect_devices, get_device_by_path};
+use crate::devices::get_device_by_path;
 use crate::error::{MediaDohError, Result};
-use crate::models::{Device, DeviceType, Song, SyncStatus};
-use crate::scanner::calculate_file_hash;
+use crate::models::{Device, Song, SyncStatus};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use walkdir::WalkDir;
 
 /// Sync result for a single file
@@ -60,7 +59,7 @@ pub async fn compare_with_device(pool: &DbPool, device_path: &PathBuf) -> Result
 
     for song in songs {
         let relative_path = build_device_path(&song);
-        let device_file_path = music_folder.join(&relative_path);
+        let _device_file_path = music_folder.join(&relative_path);
 
         if let Some(device_file_info) = device_files.get(&relative_path) {
             // File exists on device, check if it needs updating
@@ -85,6 +84,7 @@ pub async fn compare_with_device(pool: &DbPool, device_path: &PathBuf) -> Result
 
 /// Info about a file on the device
 #[derive(Debug)]
+#[allow(dead_code)]
 struct DeviceFileInfo {
     path: PathBuf,
     size: u64,
