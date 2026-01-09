@@ -33,8 +33,8 @@ pub enum SyncAction {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncComparison {
-    pub to_copy: Vec<String>,      // Song IDs to copy
-    pub to_update: Vec<String>,    // Song IDs to update
+    pub to_copy: Vec<String>,        // Song IDs to copy
+    pub to_update: Vec<String>,      // Song IDs to update
     pub already_synced: Vec<String>, // Song IDs already synced
     pub device: Device,
 }
@@ -44,7 +44,9 @@ pub async fn compare_with_device(pool: &DbPool, device_path: &PathBuf) -> Result
     let device = get_device_by_path(device_path)?
         .ok_or_else(|| MediaDohError::DeviceNotFound(device_path.to_string_lossy().to_string()))?;
 
-    let music_folder = device.music_folder.clone()
+    let music_folder = device
+        .music_folder
+        .clone()
         .ok_or_else(|| MediaDohError::Sync("No music folder found on device".to_string()))?;
 
     // Get all songs from local library
@@ -106,15 +108,21 @@ fn scan_device_files(music_folder: &PathBuf) -> Result<HashMap<PathBuf, DeviceFi
         let path = entry.path();
         if path.is_file() {
             if let Ok(metadata) = fs::metadata(path) {
-                let relative = path.strip_prefix(music_folder)
+                let relative = path
+                    .strip_prefix(music_folder)
                     .unwrap_or(path)
                     .to_path_buf();
 
-                files.insert(relative, DeviceFileInfo {
-                    path: path.to_path_buf(),
-                    size: metadata.len(),
-                    modified: metadata.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
-                });
+                files.insert(
+                    relative,
+                    DeviceFileInfo {
+                        path: path.to_path_buf(),
+                        size: metadata.len(),
+                        modified: metadata
+                            .modified()
+                            .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+                    },
+                );
             }
         }
     }
@@ -126,16 +134,18 @@ fn scan_device_files(music_folder: &PathBuf) -> Result<HashMap<PathBuf, DeviceFi
 /// Format: MUSIC/Artist/Album/TrackNum - Title.ext
 fn build_device_path(song: &Song) -> PathBuf {
     let artist = sanitize_filename(
-        song.album_artist.as_ref()
+        song.album_artist
+            .as_ref()
             .or(song.artist.as_ref())
             .map(|s| s.as_str())
-            .unwrap_or("Unknown Artist")
+            .unwrap_or("Unknown Artist"),
     );
 
     let album = sanitize_filename(
-        song.album.as_ref()
+        song.album
+            .as_ref()
             .map(|s| s.as_str())
-            .unwrap_or("Unknown Album")
+            .unwrap_or("Unknown Album"),
     );
 
     let track_num = song.track_number.unwrap_or(0);
@@ -155,7 +165,7 @@ fn build_device_path(song: &Song) -> PathBuf {
 fn sanitize_filename(name: &str) -> String {
     let invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
     let mut result = name.to_string();
-    
+
     for ch in invalid_chars {
         result = result.replace(ch, "_");
     }
@@ -204,7 +214,9 @@ pub async fn sync_to_device(
     let device = get_device_by_path(device_path)?
         .ok_or_else(|| MediaDohError::DeviceNotFound(device_path.to_string_lossy().to_string()))?;
 
-    let music_folder = device.music_folder.clone()
+    let music_folder = device
+        .music_folder
+        .clone()
         .ok_or_else(|| MediaDohError::Sync("No music folder found on device".to_string()))?;
 
     // Ensure music folder exists
@@ -221,11 +233,7 @@ pub async fn sync_to_device(
 }
 
 /// Sync a single song to the device
-async fn sync_single_song(
-    pool: &DbPool,
-    song_id: &str,
-    music_folder: &PathBuf,
-) -> SyncResult {
+async fn sync_single_song(pool: &DbPool, song_id: &str, music_folder: &PathBuf) -> SyncResult {
     // Get song from database
     let song = match get_song_by_id(pool, song_id).await {
         Ok(Some(s)) => s,
@@ -315,7 +323,10 @@ pub fn export_playlist_m3u(
         // Extended info line
         let duration_secs = song.duration_ms / 1000;
         let artist = song.artist.as_deref().unwrap_or("Unknown Artist");
-        content.push_str(&format!("#EXTINF:{},{} - {}\n", duration_secs, artist, song.title));
+        content.push_str(&format!(
+            "#EXTINF:{},{} - {}\n",
+            duration_secs, artist, song.title
+        ));
 
         // File path
         let path = if let Some(base) = relative_to {
@@ -337,7 +348,10 @@ pub fn export_playlist_m3u(
 }
 
 /// Import playlist from M3U file
-pub fn import_playlist_m3u(m3u_path: &PathBuf, base_path: Option<&PathBuf>) -> Result<Vec<PathBuf>> {
+pub fn import_playlist_m3u(
+    m3u_path: &PathBuf,
+    base_path: Option<&PathBuf>,
+) -> Result<Vec<PathBuf>> {
     let content = fs::read_to_string(m3u_path)?;
     let mut paths = Vec::new();
 
