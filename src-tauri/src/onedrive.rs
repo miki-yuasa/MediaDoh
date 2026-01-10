@@ -599,14 +599,39 @@ impl OneDriveClient {
         use lofty::probe::Probe;
         use std::io::Cursor;
 
+        // Log the first bytes for debugging
+        let first_bytes: Vec<u8> = data.iter().take(16).cloned().collect();
+        let first_bytes_hex: String = first_bytes.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+        let first_bytes_ascii: String = first_bytes.iter().map(|b| {
+            if *b >= 0x20 && *b < 0x7f { *b as char } else { '.' }
+        }).collect();
+        
+        log::info!("Parsing metadata for '{}' - {} bytes, first 16: [{}] '{}'", 
+            file_name, data.len(), first_bytes_hex, first_bytes_ascii);
+
         let cursor = Cursor::new(data);
 
         // Use Probe to read from a Cursor (in-memory data)
-        let tagged_file = Probe::new(cursor)
-            .guess_file_type()
-            .map_err(|e| MediaDohError::Metadata(format!("Failed to detect file type: {}", e)))?
-            .read()
-            .map_err(|e| MediaDohError::Metadata(format!("Failed to parse metadata: {}", e)))?;
+        let probe = match Probe::new(cursor).guess_file_type() {
+            Ok(p) => {
+                log::info!("Detected file type: {:?}", p.file_type());
+                p
+            }
+            Err(e) => {
+                log::error!("Failed to detect file type for '{}': {}", file_name, e);
+                log::error!("Data length: {} bytes, first 16 bytes hex: [{}]", data.len(), first_bytes_hex);
+                return Err(MediaDohError::Metadata(format!("Failed to detect file type: {}", e)));
+            }
+        };
+        
+        let tagged_file = match probe.read() {
+            Ok(tf) => tf,
+            Err(e) => {
+                log::error!("Failed to parse metadata for '{}': {}", file_name, e);
+                log::error!("Data length: {} bytes, first 16 bytes: [{}] '{}'", data.len(), first_bytes_hex, first_bytes_ascii);
+                return Err(MediaDohError::Metadata(format!("Failed to parse metadata: {}", e)));
+            }
+        };
 
         // Extract metadata from tags
         let tag = tagged_file
@@ -715,11 +740,32 @@ impl OneDriveClient {
                     }
 
                     // Give up and return basic metadata from filename
-                    log::warn!(
-                        "Failed to parse metadata after fetching {} bytes: {}",
-                        data.len(),
-                        e
-                    );
+                    log::error!("=== METADATA EXTRACTION FAILED ===");
+                    log::error!("File: '{}'", file_name);
+                    log::error!("File size: {} bytes", file_size);
+                    log::error!("Data fetched: {} bytes", data.len());
+                    log::error!("Error: {}", e);
+                    
+                    // Log first 64 bytes as hex for debugging
+                    let hex_dump: String = data.iter().take(64).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                    log::error!("First 64 bytes (hex): {}", hex_dump);
+                    
+                    // Check for common file signatures
+                    if data.len() >= 4 {
+                        let sig = &data[0..4];
+                        let sig_info = match sig {
+                            [0x49, 0x44, 0x33, _] => "ID3v2 tag header",
+                            [0xff, 0xfb, _, _] | [0xff, 0xfa, _, _] | [0xff, 0xf3, _, _] | [0xff, 0xf2, _, _] => "MP3 frame sync",
+                            [0x66, 0x4c, 0x61, 0x43] => "FLAC signature",
+                            [0x00, 0x00, 0x00, _] if data.len() >= 8 && &data[4..8] == b"ftyp" => "MP4/M4A container",
+                            [0x4f, 0x67, 0x67, 0x53] => "OGG container",
+                            [0x52, 0x49, 0x46, 0x46] => "RIFF/WAV container",
+                            _ => "Unknown format",
+                        };
+                        log::error!("File signature analysis: {}", sig_info);
+                    }
+                    log::error!("=== END METADATA EXTRACTION FAILURE ===");
+                    
                     return Ok(OneDriveAudioMetadata {
                         title: file_name.rsplit_once('.').map(|(name, _)| name.to_string()),
                         artist: None,
@@ -766,7 +812,10 @@ impl OneDriveClient {
         let download_url = match self.get_download_url(&file_info.id).await {
             Ok(url) => url,
             Err(e) => {
-                log::warn!("Failed to get download URL for '{}': {}", file_info.name, e);
+                log::error!("=== DOWNLOAD URL FETCH FAILED ===");
+                log::error!("File: '{}' (ID: {})", file_info.name, file_info.id);
+                log::error!("Error: {}", e);
+                log::error!("=== END DOWNLOAD URL FAILURE ===");
                 // Fall back to filename as title
                 let title = file_info
                     .name

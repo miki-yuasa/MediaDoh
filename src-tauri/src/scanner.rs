@@ -4,8 +4,7 @@ use crate::database::DbPool;
 use crate::error::{MediaDohError, Result};
 use crate::models::{AudioFormat, Song, SyncStatus};
 use crate::onedrive::{
-    get_cloud_file_status, local_path_to_onedrive_path, CloudFileStatus,
-    OneDriveClient,
+    get_cloud_file_status, local_path_to_onedrive_path, CloudFileStatus, OneDriveClient,
 };
 use chrono::Utc;
 use lofty::prelude::*;
