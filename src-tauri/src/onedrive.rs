@@ -126,7 +126,9 @@ impl OneDriveClient {
         Self {
             http_client: Client::new(),
             tokens: Arc::new(RwLock::new(None)),
-            client_id: Arc::new(RwLock::new(client_id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()))),
+            client_id: Arc::new(RwLock::new(
+                client_id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()),
+            )),
         }
     }
 
@@ -173,7 +175,7 @@ impl OneDriveClient {
     /// User goes to verification_uri and enters user_code
     pub async fn start_device_code_flow(&self) -> Result<DeviceCodeResponse> {
         let client_id = self.client_id.read().await;
-        
+
         // Check if client ID is configured
         if *client_id == "your-client-id-here" || client_id.is_empty() {
             return Err(MediaDohError::Network(
@@ -182,11 +184,8 @@ impl OneDriveClient {
         }
 
         let scopes = "Files.Read Files.Read.All offline_access";
-        
-        let params = [
-            ("client_id", client_id.as_str()),
-            ("scope", scopes),
-        ];
+
+        let params = [("client_id", client_id.as_str()), ("scope", scopes)];
 
         let response = self
             .http_client
@@ -272,7 +271,10 @@ impl OneDriveClient {
             "slow_down" => Ok(None),             // Need to slow down polling
             "expired_token" => Err(MediaDohError::Network("Device code expired".to_string())),
             "access_denied" => Err(MediaDohError::Network("User denied access".to_string())),
-            _ => Err(MediaDohError::Network(format!("Auth error: {}", error_resp.error))),
+            _ => Err(MediaDohError::Network(format!(
+                "Auth error: {}",
+                error_resp.error
+            ))),
         }
     }
 
@@ -549,9 +551,9 @@ pub fn local_path_to_onedrive_path(local_path: &Path) -> Option<String> {
     // Common OneDrive folder patterns
     let patterns = [
         "/OneDrive/",
-        "/OneDrive - ",   // Business accounts: "OneDrive - Company Name"
-        "\\OneDrive\\",   // Windows
-        "\\OneDrive - ",  // Windows business
+        "/OneDrive - ",  // Business accounts: "OneDrive - Company Name"
+        "\\OneDrive\\",  // Windows
+        "\\OneDrive - ", // Windows business
     ];
 
     for pattern in &patterns {
@@ -578,9 +580,7 @@ pub fn graph_metadata_to_audio(info: &OneDriveFileInfo) -> OneDriveAudioMetadata
     OneDriveAudioMetadata {
         title: audio.and_then(|a| a.title.clone()).or_else(|| {
             // Fall back to filename without extension
-            info.name
-                .rsplit_once('.')
-                .map(|(name, _)| name.to_string())
+            info.name.rsplit_once('.').map(|(name, _)| name.to_string())
         }),
         artist: audio.and_then(|a| a.artist.clone()),
         album: audio.and_then(|a| a.album.clone()),

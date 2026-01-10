@@ -367,7 +367,9 @@ export function SettingsPanel() {
                     // Client ID setup form
                     <div className="space-y-3">
                       <div className="space-y-2">
-                        <label className="text-xs font-medium">Azure App Client ID</label>
+                        <label className="text-xs font-medium">
+                          Azure App Client ID
+                        </label>
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -381,19 +383,28 @@ export function SettingsPanel() {
                             disabled={!clientId.trim()}
                             className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                           >
-                            {clientIdSaved ? <Check className="w-4 h-4" /> : "Save"}
+                            {clientIdSaved ? (
+                              <Check className="w-4 h-4" />
+                            ) : (
+                              "Save"
+                            )}
                           </button>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         To get a Client ID:{" "}
                         <button
-                          onClick={() => open("https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade")}
+                          onClick={() =>
+                            open(
+                              "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+                            )
+                          }
                           className="text-primary hover:underline"
                         >
                           Register an app on Azure
                         </button>
-                        {" → "}Enable "Allow public client flows" → Copy Application (client) ID
+                        {" → "}Enable "Allow public client flows" → Copy
+                        Application (client) ID
                       </p>
                       <button
                         onClick={() => setShowClientIdSetup(false)}
@@ -437,7 +448,9 @@ export function SettingsPanel() {
 
                       {authError && (
                         <div className="space-y-2">
-                          <p className="text-xs text-destructive">{authError}</p>
+                          <p className="text-xs text-destructive">
+                            {authError}
+                          </p>
                           {authError.includes("Client ID") && (
                             <button
                               onClick={() => setShowClientIdSetup(true)}
