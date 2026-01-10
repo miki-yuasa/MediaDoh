@@ -12,7 +12,13 @@ import {
 import { cn } from "@/lib/utils";
 import { useUIStore, useLibraryStore } from "@/store";
 import { open } from "@tauri-apps/plugin-dialog";
-import { scanLibrary, stopScan, onSongAdded, onScanCompleted, onScanCancelled } from "@/api/tauri";
+import {
+  scanLibrary,
+  stopScan,
+  onSongAdded,
+  onScanCompleted,
+  onScanCancelled,
+} from "@/api/tauri";
 import { useQueryClient } from "@tanstack/react-query";
 import { SongList } from "./SongList";
 import { AlbumGrid } from "./AlbumGrid";
@@ -174,9 +180,7 @@ export function MainContent() {
             title={t("library.addFolder")}
           >
             <FolderPlus className="w-4 h-4" />
-            <span className="hidden sm:inline">
-              {t("library.addFolder")}
-            </span>
+            <span className="hidden sm:inline">{t("library.addFolder")}</span>
           </button>
         )}
 
@@ -184,7 +188,9 @@ export function MainContent() {
         {isScanning && (
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <RefreshCw className="w-4 h-4 animate-spin" />
-            <span className="hidden sm:inline">{t("library.scanning", "Scanning...")}</span>
+            <span className="hidden sm:inline">
+              {t("library.scanning", "Scanning...")}
+            </span>
           </div>
         )}
 

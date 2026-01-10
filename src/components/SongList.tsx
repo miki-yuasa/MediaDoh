@@ -209,7 +209,10 @@ export function SongList() {
   // Close context menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(e.target as Node)
+      ) {
         setContextMenu(null);
       }
     };
@@ -584,30 +587,67 @@ function MetadataEditor({ song, onClose }: MetadataEditorProps) {
     { label: t("metadata.title", "Title"), value: song.title },
     { label: t("metadata.artist", "Artist"), value: song.artist || "-" },
     { label: t("metadata.album", "Album"), value: song.album || "-" },
-    { label: t("metadata.albumArtist", "Album Artist"), value: song.albumArtist || "-" },
-    { label: t("metadata.trackNumber", "Track"), value: song.trackNumber ? `${song.trackNumber}${song.trackTotal ? ` / ${song.trackTotal}` : ""}` : "-" },
-    { label: t("metadata.discNumber", "Disc"), value: song.discNumber ? `${song.discNumber}${song.discTotal ? ` / ${song.discTotal}` : ""}` : "-" },
+    {
+      label: t("metadata.albumArtist", "Album Artist"),
+      value: song.albumArtist || "-",
+    },
+    {
+      label: t("metadata.trackNumber", "Track"),
+      value: song.trackNumber
+        ? `${song.trackNumber}${song.trackTotal ? ` / ${song.trackTotal}` : ""}`
+        : "-",
+    },
+    {
+      label: t("metadata.discNumber", "Disc"),
+      value: song.discNumber
+        ? `${song.discNumber}${song.discTotal ? ` / ${song.discTotal}` : ""}`
+        : "-",
+    },
     { label: t("metadata.year", "Year"), value: song.year || "-" },
     { label: t("metadata.genre", "Genre"), value: song.genre || "-" },
-    { label: t("metadata.duration", "Duration"), value: formatDuration(song.durationMs) },
+    {
+      label: t("metadata.duration", "Duration"),
+      value: formatDuration(song.durationMs),
+    },
     { label: t("metadata.format", "Format"), value: song.format.toUpperCase() },
-    { label: t("metadata.bitrate", "Bitrate"), value: song.bitrate ? `${song.bitrate} kbps` : "-" },
-    { label: t("metadata.sampleRate", "Sample Rate"), value: song.sampleRate ? `${song.sampleRate} Hz` : "-" },
-    { label: t("metadata.bitDepth", "Bit Depth"), value: song.bitDepth ? `${song.bitDepth}-bit` : "-" },
+    {
+      label: t("metadata.bitrate", "Bitrate"),
+      value: song.bitrate ? `${song.bitrate} kbps` : "-",
+    },
+    {
+      label: t("metadata.sampleRate", "Sample Rate"),
+      value: song.sampleRate ? `${song.sampleRate} Hz` : "-",
+    },
+    {
+      label: t("metadata.bitDepth", "Bit Depth"),
+      value: song.bitDepth ? `${song.bitDepth}-bit` : "-",
+    },
     { label: t("metadata.channels", "Channels"), value: song.channels || "-" },
-    { label: t("metadata.filePath", "File Path"), value: song.filePath, mono: true },
-    { label: t("metadata.fileSize", "File Size"), value: `${(song.fileSize / 1024 / 1024).toFixed(2)} MB` },
+    {
+      label: t("metadata.filePath", "File Path"),
+      value: song.filePath,
+      mono: true,
+    },
+    {
+      label: t("metadata.fileSize", "File Size"),
+      value: `${(song.fileSize / 1024 / 1024).toFixed(2)} MB`,
+    },
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
       <div
         className="bg-background border border-border rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-lg font-semibold">{t("metadata.title", "Song Metadata")}</h2>
+          <h2 className="text-lg font-semibold">
+            {t("metadata.title", "Song Metadata")}
+          </h2>
           <button
             onClick={onClose}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -638,7 +678,13 @@ function MetadataEditor({ song, onClose }: MetadataEditorProps) {
             {fields.map(({ label, value, mono }) => (
               <div key={label} className={mono ? "col-span-2" : ""}>
                 <label className="text-xs text-muted-foreground">{label}</label>
-                <p className={cn("text-sm truncate", mono && "font-mono text-xs")} title={String(value)}>
+                <p
+                  className={cn(
+                    "text-sm truncate",
+                    mono && "font-mono text-xs"
+                  )}
+                  title={String(value)}
+                >
                   {value}
                 </p>
               </div>

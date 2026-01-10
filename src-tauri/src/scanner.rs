@@ -324,15 +324,12 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
     };
 
     // Use title from metadata, falling back to file name without extension
-    let title = metadata
-        .title
-        .clone()
-        .unwrap_or_else(|| {
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string()
-        });
+    let title = metadata.title.clone().unwrap_or_else(|| {
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Unknown")
+            .to_string()
+    });
 
     Ok(Song {
         id: Uuid::new_v4().to_string(),
@@ -416,7 +413,9 @@ async fn download_and_cache_thumbnail(
         .map_err(|e| MediaDohError::Network(e.to_string()))?;
 
     if !response.status().is_success() {
-        return Err(MediaDohError::Network("Failed to download thumbnail".to_string()));
+        return Err(MediaDohError::Network(
+            "Failed to download thumbnail".to_string(),
+        ));
     }
 
     let bytes = response
@@ -478,7 +477,11 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
 
     log::debug!(
         "Parsed local file: {} - title: {}, artist: {:?}, album: {:?}, has_tag: {}",
-        file_name, title, artist, album, tag.is_some()
+        file_name,
+        title,
+        artist,
+        album,
+        tag.is_some()
     );
 
     // Audio properties
