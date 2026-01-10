@@ -281,14 +281,20 @@ export function SettingsPanel() {
                     <div className="flex items-center justify-center gap-2">
                       <Loader2 className="w-5 h-5 animate-spin text-primary" />
                       <span className="text-sm font-medium">
-                        {t("settings.waitingForAuth", "Waiting for authorization...")}
+                        {t(
+                          "settings.waitingForAuth",
+                          "Waiting for authorization..."
+                        )}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {t("settings.deviceCodeInstructions", "A browser window has opened. Enter this code:")}
+                      {t(
+                        "settings.deviceCodeInstructions",
+                        "A browser window has opened. Enter this code:"
+                      )}
                     </p>
                   </div>
-                  
+
                   {/* User code display */}
                   <div className="flex items-center justify-center gap-2">
                     <code className="px-4 py-2 text-2xl font-mono font-bold bg-background border border-border rounded-lg tracking-widest">
@@ -306,7 +312,7 @@ export function SettingsPanel() {
                       )}
                     </button>
                   </div>
-                  
+
                   <p className="text-xs text-center text-muted-foreground">
                     {t("settings.orVisit", "Or visit:")}{" "}
                     <button
@@ -316,7 +322,7 @@ export function SettingsPanel() {
                       {deviceCode.verification_uri}
                     </button>
                   </p>
-                  
+
                   <button
                     onClick={handleCancelAuth}
                     className="w-full px-3 py-1.5 text-sm rounded-md border border-border hover:bg-accent transition-colors"
@@ -347,7 +353,7 @@ export function SettingsPanel() {
                       {t("settings.connect", "Connect")}
                     </button>
                   </div>
-                  
+
                   {authError && (
                     <p className="text-xs text-destructive">{authError}</p>
                   )}
