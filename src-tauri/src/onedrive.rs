@@ -66,6 +66,8 @@ pub struct OneDriveAudioMetadata {
     pub genre: Option<String>,
     pub duration_ms: Option<u64>,
     pub bitrate: Option<u32>,
+    /// Thumbnail/album art URL from OneDrive
+    pub thumbnail_url: Option<String>,
 }
 
 /// OneDrive file info from Graph API
@@ -589,6 +591,68 @@ impl OneDriveClient {
         Ok(bytes.to_vec())
     }
 
+    /// Calculate the total size needed to read all FLAC metadata blocks
+    /// FLAC metadata blocks start at byte 4 (after "fLaC" magic)
+    /// Each block has: 1 byte header (bit 7 = last flag, bits 0-6 = type), 3 bytes length
+    /// Block types: 0=STREAMINFO, 1=PADDING, 2=APPLICATION, 3=SEEKTABLE, 4=VORBIS_COMMENT, 5=CUESHEET, 6=PICTURE
+    fn calculate_flac_metadata_size(data: &[u8]) -> u64 {
+        if data.len() < 8 || &data[0..4] != b"fLaC" {
+            return 0;
+        }
+
+        let mut pos: usize = 4; // Start after "fLaC" magic
+        let mut total_size: u64 = 4; // Include the magic bytes
+        let mut found_vorbis_comment = false;
+
+        while pos + 4 <= data.len() {
+            let header_byte = data[pos];
+            let is_last = (header_byte & 0x80) != 0;
+            let block_type = header_byte & 0x7F;
+            let block_length = ((data[pos + 1] as u32) << 16)
+                | ((data[pos + 2] as u32) << 8)
+                | (data[pos + 3] as u32);
+
+            log::debug!(
+                "FLAC block at {}: type={}, length={}, is_last={}",
+                pos,
+                block_type,
+                block_length,
+                is_last
+            );
+
+            // Add 4 bytes for header + block length
+            total_size += 4 + block_length as u64;
+
+            // Check if this is VORBIS_COMMENT (type 4) which contains the text metadata
+            if block_type == 4 {
+                found_vorbis_comment = true;
+                // If we've found the VORBIS_COMMENT and it's not the last block,
+                // we still need to continue to find where audio data starts
+            }
+
+            pos += 4 + block_length as usize;
+
+            if is_last {
+                break;
+            }
+
+            // Safety check: if we can't read the next header, we need more data
+            if pos + 4 > data.len() && !is_last {
+                // We need more data to see all metadata blocks
+                // If we haven't found VORBIS_COMMENT yet, request more
+                if !found_vorbis_comment {
+                    return total_size + 100 * 1024; // Request 100KB more
+                }
+                // Otherwise estimate based on what we've seen
+                return total_size + 100 * 1024;
+            }
+        }
+
+        // Add some extra bytes to ensure we have enough for audio frame header
+        // lofty needs to read past the metadata to verify it's valid FLAC
+        total_size + 4096
+    }
+
     /// Parse audio metadata from partial file content using lofty
     /// Returns the metadata if successfully parsed, or an error if more data is needed
     pub fn parse_metadata_from_bytes(
@@ -601,13 +665,29 @@ impl OneDriveClient {
 
         // Log the first bytes for debugging
         let first_bytes: Vec<u8> = data.iter().take(16).cloned().collect();
-        let first_bytes_hex: String = first_bytes.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
-        let first_bytes_ascii: String = first_bytes.iter().map(|b| {
-            if *b >= 0x20 && *b < 0x7f { *b as char } else { '.' }
-        }).collect();
-        
-        log::info!("Parsing metadata for '{}' - {} bytes, first 16: [{}] '{}'", 
-            file_name, data.len(), first_bytes_hex, first_bytes_ascii);
+        let first_bytes_hex: String = first_bytes
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let first_bytes_ascii: String = first_bytes
+            .iter()
+            .map(|b| {
+                if *b >= 0x20 && *b < 0x7f {
+                    *b as char
+                } else {
+                    '.'
+                }
+            })
+            .collect();
+
+        log::info!(
+            "Parsing metadata for '{}' - {} bytes, first 16: [{}] '{}'",
+            file_name,
+            data.len(),
+            first_bytes_hex,
+            first_bytes_ascii
+        );
 
         let cursor = Cursor::new(data);
 
@@ -619,17 +699,32 @@ impl OneDriveClient {
             }
             Err(e) => {
                 log::error!("Failed to detect file type for '{}': {}", file_name, e);
-                log::error!("Data length: {} bytes, first 16 bytes hex: [{}]", data.len(), first_bytes_hex);
-                return Err(MediaDohError::Metadata(format!("Failed to detect file type: {}", e)));
+                log::error!(
+                    "Data length: {} bytes, first 16 bytes hex: [{}]",
+                    data.len(),
+                    first_bytes_hex
+                );
+                return Err(MediaDohError::Metadata(format!(
+                    "Failed to detect file type: {}",
+                    e
+                )));
             }
         };
-        
+
         let tagged_file = match probe.read() {
             Ok(tf) => tf,
             Err(e) => {
                 log::error!("Failed to parse metadata for '{}': {}", file_name, e);
-                log::error!("Data length: {} bytes, first 16 bytes: [{}] '{}'", data.len(), first_bytes_hex, first_bytes_ascii);
-                return Err(MediaDohError::Metadata(format!("Failed to parse metadata: {}", e)));
+                log::error!(
+                    "Data length: {} bytes, first 16 bytes: [{}] '{}'",
+                    data.len(),
+                    first_bytes_hex,
+                    first_bytes_ascii
+                );
+                return Err(MediaDohError::Metadata(format!(
+                    "Failed to parse metadata: {}",
+                    e
+                )));
             }
         };
 
@@ -664,6 +759,7 @@ impl OneDriveClient {
                 .try_into()
                 .ok(),
             bitrate: tagged_file.properties().audio_bitrate(),
+            thumbnail_url: None, // Will be set by get_file_metadata_with_fallback
         };
 
         Ok(metadata)
@@ -679,8 +775,9 @@ impl OneDriveClient {
     ) -> Result<OneDriveAudioMetadata> {
         // Start with 50KB - enough for most ID3v2 headers and metadata
         const INITIAL_CHUNK: u64 = 50 * 1024; // 50KB
-                                              // ID3v2 headers can be large, but typically metadata is in first 256KB
-        const MAX_CHUNK: u64 = 256 * 1024; // 256KB max
+                                              // FLAC files can have large metadata blocks (especially with embedded artwork)
+                                              // Some FLAC files have 2MB+ of artwork embedded
+        const MAX_CHUNK: u64 = 4 * 1024 * 1024; // 4MB max
 
         let mut chunk_size = INITIAL_CHUNK;
 
@@ -720,6 +817,24 @@ impl OneDriveClient {
                 }
             }
 
+            // Check for FLAC and calculate total metadata block size
+            if data.len() >= 8 && &data[0..4] == b"fLaC" {
+                let required_size = Self::calculate_flac_metadata_size(&data);
+                log::info!(
+                    "FLAC detected, required metadata size: {} bytes",
+                    required_size
+                );
+
+                if (data.len() as u64) < required_size && chunk_size < MAX_CHUNK {
+                    chunk_size = std::cmp::min(required_size + 1024, MAX_CHUNK);
+                    log::info!(
+                        "Need more data for FLAC, increasing chunk to {} bytes",
+                        chunk_size
+                    );
+                    continue;
+                }
+            }
+
             // Try to parse the metadata
             match Self::parse_metadata_from_bytes(&data, file_name) {
                 Ok(metadata) => {
@@ -745,19 +860,29 @@ impl OneDriveClient {
                     log::error!("File size: {} bytes", file_size);
                     log::error!("Data fetched: {} bytes", data.len());
                     log::error!("Error: {}", e);
-                    
+
                     // Log first 64 bytes as hex for debugging
-                    let hex_dump: String = data.iter().take(64).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                    let hex_dump: String = data
+                        .iter()
+                        .take(64)
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     log::error!("First 64 bytes (hex): {}", hex_dump);
-                    
+
                     // Check for common file signatures
                     if data.len() >= 4 {
                         let sig = &data[0..4];
                         let sig_info = match sig {
                             [0x49, 0x44, 0x33, _] => "ID3v2 tag header",
-                            [0xff, 0xfb, _, _] | [0xff, 0xfa, _, _] | [0xff, 0xf3, _, _] | [0xff, 0xf2, _, _] => "MP3 frame sync",
+                            [0xff, 0xfb, _, _]
+                            | [0xff, 0xfa, _, _]
+                            | [0xff, 0xf3, _, _]
+                            | [0xff, 0xf2, _, _] => "MP3 frame sync",
                             [0x66, 0x4c, 0x61, 0x43] => "FLAC signature",
-                            [0x00, 0x00, 0x00, _] if data.len() >= 8 && &data[4..8] == b"ftyp" => "MP4/M4A container",
+                            [0x00, 0x00, 0x00, _] if data.len() >= 8 && &data[4..8] == b"ftyp" => {
+                                "MP4/M4A container"
+                            }
                             [0x4f, 0x67, 0x67, 0x53] => "OGG container",
                             [0x52, 0x49, 0x46, 0x46] => "RIFF/WAV container",
                             _ => "Unknown format",
@@ -765,7 +890,7 @@ impl OneDriveClient {
                         log::error!("File signature analysis: {}", sig_info);
                     }
                     log::error!("=== END METADATA EXTRACTION FAILURE ===");
-                    
+
                     return Ok(OneDriveAudioMetadata {
                         title: file_name.rsplit_once('.').map(|(name, _)| name.to_string()),
                         artist: None,
@@ -779,6 +904,7 @@ impl OneDriveClient {
                         genre: None,
                         duration_ms: None,
                         bitrate: None,
+                        thumbnail_url: None,
                     });
                 }
             }
@@ -836,14 +962,30 @@ impl OneDriveClient {
                         genre: None,
                         duration_ms: None,
                         bitrate: None,
+                        thumbnail_url: None,
                     },
                 ));
             }
         };
 
-        let metadata = self
+        let mut metadata = self
             .fetch_metadata_via_range(&download_url, &file_info.name, file_info.size)
             .await?;
+
+        // Fetch thumbnail URL from OneDrive
+        match self.get_thumbnail_url(&file_info.id).await {
+            Ok(Some(url)) => {
+                log::info!("Got thumbnail URL for '{}'", file_info.name);
+                metadata.thumbnail_url = Some(url);
+            }
+            Ok(None) => {
+                log::debug!("No thumbnail available for '{}'", file_info.name);
+            }
+            Err(e) => {
+                log::debug!("Failed to get thumbnail for '{}': {}", file_info.name, e);
+            }
+        }
+
         Ok((file_info, metadata))
     }
 }
@@ -974,6 +1116,7 @@ pub fn graph_metadata_to_audio(info: &OneDriveFileInfo) -> OneDriveAudioMetadata
         genre: audio.and_then(|a| a.genre.clone()),
         duration_ms: audio.and_then(|a| a.duration),
         bitrate: audio.and_then(|a| a.bitrate),
+        thumbnail_url: None, // Set separately via get_thumbnail_url
     }
 }
 

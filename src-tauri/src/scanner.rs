@@ -348,27 +348,20 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
     let is_lossless = format.is_lossless();
     let now = Utc::now();
 
-    // Try to get thumbnail/album art
-    let (has_art, art_cache_path) = match client.get_thumbnail_url(&file_info.id).await {
-        Ok(Some(thumb_url)) => {
-            log::debug!("Got thumbnail URL for {}", file_name);
-            // Download and cache the thumbnail
-            match download_and_cache_thumbnail(&thumb_url, &metadata, &file_name).await {
-                Ok(cached_path) => (true, Some(cached_path)),
-                Err(e) => {
-                    log::warn!("Failed to cache thumbnail: {}", e);
-                    (false, None)
-                }
+    // Try to get thumbnail/album art - use the URL already fetched in get_file_metadata_with_fallback
+    let (has_art, art_cache_path) = if let Some(ref thumb_url) = metadata.thumbnail_url {
+        log::debug!("Using thumbnail URL from metadata for {}", file_name);
+        // Download and cache the thumbnail
+        match download_and_cache_thumbnail(thumb_url, &metadata, &file_name).await {
+            Ok(cached_path) => (true, Some(cached_path)),
+            Err(e) => {
+                log::warn!("Failed to cache thumbnail for {}: {}", file_name, e);
+                (false, None)
             }
         }
-        Ok(None) => {
-            log::debug!("No thumbnail available for {}", file_name);
-            (false, None)
-        }
-        Err(e) => {
-            log::debug!("Failed to get thumbnail: {}", e);
-            (false, None)
-        }
+    } else {
+        log::debug!("No thumbnail available for {}", file_name);
+        (false, None)
     };
 
     // Use title from metadata, falling back to file name without extension
@@ -425,15 +418,23 @@ async fn download_and_cache_thumbnail(
     let cache_dir = get_artwork_cache_dir()?;
 
     // Create album key for caching
-    let album_key = format!(
-        "{}-{}",
-        metadata
-            .album_artist
-            .as_deref()
-            .or(metadata.artist.as_deref())
-            .unwrap_or("Unknown"),
-        metadata.album.as_deref().unwrap_or("Unknown")
-    );
+    // Use album artist + album if available, otherwise use file name for uniqueness
+    let album_key =
+        if metadata.album.is_some() || metadata.album_artist.is_some() || metadata.artist.is_some()
+        {
+            format!(
+                "{}-{}",
+                metadata
+                    .album_artist
+                    .as_deref()
+                    .or(metadata.artist.as_deref())
+                    .unwrap_or("Unknown"),
+                metadata.album.as_deref().unwrap_or("Unknown")
+            )
+        } else {
+            // When metadata extraction fails, use file name to avoid all unknowns mapping to same file
+            file_name.to_string()
+        };
 
     let safe_name: String = album_key
         .chars()
