@@ -555,7 +555,7 @@ pub fn local_path_to_onedrive_path(local_path: &Path) -> Option<String> {
         // Find "OneDrive" and then find the slash after the account name
         if let Some(onedrive_idx) = path_str.find("/OneDrive") {
             let after_onedrive = &path_str[onedrive_idx + 1..]; // Skip the leading /
-            // Find the first slash after "OneDrive-AccountName"
+                                                                // Find the first slash after "OneDrive-AccountName"
             if let Some(slash_idx) = after_onedrive.find('/') {
                 let remaining = &after_onedrive[slash_idx + 1..];
                 if !remaining.is_empty() {

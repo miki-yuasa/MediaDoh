@@ -11,10 +11,13 @@ import {
   Copy,
   Check,
   Settings,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { cn } from "@/lib/utils";
-import { useUIStore } from "@/store";
+import { useUIStore, useLibraryStore } from "@/store";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ThemePreference } from "@/types";
 import {
   isOneDriveAuthenticated,
@@ -23,12 +26,15 @@ import {
   disconnectOneDrive,
   getOneDriveClientId,
   setOneDriveClientId,
+  clearLibrary,
   type DeviceCodeResponse,
 } from "@/api/tauri";
 
 export function SettingsPanel() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useUIStore();
+  const { setSongs, clearSelection } = useLibraryStore();
+  const queryClient = useQueryClient();
   const [oneDriveConnected, setOneDriveConnected] = useState(false);
   const [oneDriveLoading, setOneDriveLoading] = useState(false);
   const [deviceCode, setDeviceCode] = useState<DeviceCodeResponse | null>(null);
@@ -37,6 +43,9 @@ export function SettingsPanel() {
   const [clientId, setClientId] = useState("");
   const [clientIdSaved, setClientIdSaved] = useState(false);
   const [showClientIdSetup, setShowClientIdSetup] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearingLibrary, setClearingLibrary] = useState(false);
+  const [clearResult, setClearResult] = useState<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -174,6 +183,26 @@ export function SettingsPanel() {
     }
   };
 
+  const handleClearLibrary = async () => {
+    try {
+      setClearingLibrary(true);
+      const count = await clearLibrary();
+      // Update the UI immediately
+      setSongs([]);
+      clearSelection();
+      // Also invalidate the query cache so it stays in sync
+      await queryClient.invalidateQueries({ queryKey: ["songs"] });
+      setClearResult(t("settings.libraryCleared", { count }) || `Cleared ${count} songs from library index`);
+      setShowClearConfirm(false);
+      setTimeout(() => setClearResult(null), 5000);
+    } catch (err) {
+      console.error("Failed to clear library:", err);
+      setClearResult("Failed to clear library");
+    } finally {
+      setClearingLibrary(false);
+    }
+  };
+
   const themes: Array<{
     value: ThemePreference;
     icon: React.ReactNode;
@@ -269,6 +298,62 @@ export function SettingsPanel() {
               <p className="text-sm text-muted-foreground">
                 Library folder management coming soon...
               </p>
+            </div>
+          </div>
+
+          {/* Clear Library */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              {t("settings.libraryIndex", "Library Index")}
+            </label>
+            <div className="p-4 border border-border rounded-md bg-background-secondary space-y-3">
+              {showClearConfirm ? (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm">
+                      {t("settings.clearLibraryWarning", "This will remove all songs from the library index. Your music files will NOT be deleted. You will need to rescan your folders to rebuild the library.")}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleClearLibrary}
+                      disabled={clearingLibrary}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
+                    >
+                      {clearingLibrary ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                      {t("settings.confirmClear", "Yes, Clear Index")}
+                    </button>
+                    <button
+                      onClick={() => setShowClearConfirm(false)}
+                      disabled={clearingLibrary}
+                      className="px-3 py-1.5 text-sm rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-50"
+                    >
+                      {t("settings.cancel", "Cancel")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    {t("settings.clearLibraryDescription", "Clear the library index to rescan from scratch")}
+                  </p>
+                  <button
+                    onClick={() => setShowClearConfirm(true)}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-destructive text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {t("settings.clearLibrary", "Clear Index")}
+                  </button>
+                </div>
+              )}
+              {clearResult && (
+                <p className="text-sm text-green-600 dark:text-green-400">{clearResult}</p>
+              )}
             </div>
           </div>
         </section>

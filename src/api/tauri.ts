@@ -41,6 +41,22 @@ export async function searchSongs(query: string): Promise<Song[]> {
   return invoke<Song[]>("search_songs", { query });
 }
 
+/**
+ * Clear the library index (removes all songs from database, not files)
+ * Returns the number of songs removed
+ */
+export async function clearLibrary(): Promise<number> {
+  return invoke<number>("clear_library");
+}
+
+/**
+ * Delete specific songs from the library index
+ * Returns the number of songs removed
+ */
+export async function deleteSongs(songIds: string[]): Promise<number> {
+  return invoke<number>("delete_songs", { songIds });
+}
+
 // ============================================================================
 // Library Folder API
 // ============================================================================

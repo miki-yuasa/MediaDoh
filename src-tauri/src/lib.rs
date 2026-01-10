@@ -77,6 +77,8 @@ pub fn run() {
             commands::scan_library,
             commands::get_songs,
             commands::search_songs,
+            commands::clear_library,
+            commands::delete_songs,
             // Playback commands
             commands::play_song,
             commands::pause,

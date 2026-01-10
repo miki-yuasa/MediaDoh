@@ -75,6 +75,48 @@ pub async fn get_songs(state: State<'_, AppState>) -> Result<Vec<Song>> {
     Ok(songs)
 }
 
+/// Clear the library index (delete all songs from database, not files)
+#[tauri::command]
+pub async fn clear_library(state: State<'_, AppState>) -> Result<u64> {
+    // Delete all songs from the database
+    let result = sqlx::query("DELETE FROM songs")
+        .execute(&state.db)
+        .await?;
+
+    let deleted_count = result.rows_affected();
+    log::info!("Cleared library: {} songs removed from index", deleted_count);
+
+    Ok(deleted_count)
+}
+
+/// Delete specific songs from the library index by their IDs
+#[tauri::command]
+pub async fn delete_songs(song_ids: Vec<String>, state: State<'_, AppState>) -> Result<u64> {
+    if song_ids.is_empty() {
+        return Ok(0);
+    }
+
+    // Build placeholders for the IN clause
+    let placeholders: Vec<String> = (1..=song_ids.len()).map(|i| format!("${}", i)).collect();
+    let query = format!("DELETE FROM songs WHERE id IN ({})", placeholders.join(", "));
+
+    let mut query_builder = sqlx::query(&query);
+    for id in &song_ids {
+        query_builder = query_builder.bind(id);
+    }
+
+    let result = query_builder.execute(&state.db).await?;
+    let deleted_count = result.rows_affected();
+
+    log::info!(
+        "Deleted {} songs from index (requested: {})",
+        deleted_count,
+        song_ids.len()
+    );
+
+    Ok(deleted_count)
+}
+
 /// Search songs by query
 #[tauri::command]
 pub async fn search_songs(query: String, state: State<'_, AppState>) -> Result<Vec<Song>> {

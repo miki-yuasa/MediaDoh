@@ -1,12 +1,12 @@
-import { useCallback, useMemo, useEffect } from "react";
+import { useCallback, useMemo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { List, RowComponentProps } from "react-window";
 import { AutoSizer } from "react-virtualized-auto-sizer";
-import { Check, AlertCircle, Music } from "lucide-react";
+import { Check, AlertCircle, Music, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
-import { useQuery } from "@tanstack/react-query";
-import { getSongs, playSong } from "@/api/tauri";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getSongs, playSong, deleteSongs } from "@/api/tauri";
 import type { Song, SongGroup } from "@/types";
 
 const ROW_HEIGHT = 32;
@@ -166,18 +166,22 @@ function VirtualRow({
 
 export function SongList() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
   const {
     songs,
     setSongs,
     selectedSongIds,
     selectSong,
+    clearSelection,
     searchQuery,
-    sortConfig,
   } = useLibraryStore();
 
   const { currentSong, setQueue, setCurrentSong, setIsPlaying } =
     usePlayerStore();
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const { data: fetchedSongs } = useQuery({
     queryKey: ["songs"],
@@ -204,28 +208,29 @@ export function SongList() {
       );
     }
 
+    // Always sort by album artist, album, then track number to keep songs in same album together
+    // This groups songs by album and orders them by track number within each album
     result.sort((a, b) => {
-      const aValue = a[sortConfig.field as keyof Song];
-      const bValue = b[sortConfig.field as keyof Song];
+      // First, sort by album artist (or artist if not set)
+      const aAlbumArtist = (a.albumArtist || a.artist || "").toLowerCase();
+      const bAlbumArtist = (b.albumArtist || b.artist || "").toLowerCase();
+      const albumArtistComparison = aAlbumArtist.localeCompare(bAlbumArtist);
+      if (albumArtistComparison !== 0) return albumArtistComparison;
 
-      if (aValue == null && bValue == null) return 0;
-      if (aValue == null) return 1;
-      if (bValue == null) return -1;
+      // Then, sort by album name
+      const aAlbum = (a.album || "").toLowerCase();
+      const bAlbum = (b.album || "").toLowerCase();
+      const albumComparison = aAlbum.localeCompare(bAlbum);
+      if (albumComparison !== 0) return albumComparison;
 
-      let comparison: number;
-      if (typeof aValue === "string" && typeof bValue === "string") {
-        comparison = aValue.localeCompare(bValue);
-      } else if (typeof aValue === "number" && typeof bValue === "number") {
-        comparison = aValue - bValue;
-      } else {
-        comparison = String(aValue).localeCompare(String(bValue));
-      }
-
-      return sortConfig.order === "ascending" ? comparison : -comparison;
+      // Finally, sort by track number within the same album
+      const aTrack = a.trackNumber || 999;
+      const bTrack = b.trackNumber || 999;
+      return aTrack - bTrack;
     });
 
     return result;
-  }, [songs, searchQuery, sortConfig]);
+  }, [songs, searchQuery]);
 
   const songGroups = useMemo(
     () => groupSongsByAlbum(filteredSongs),
@@ -273,6 +278,29 @@ export function SongList() {
     },
     [filteredSongs, setQueue, setCurrentSong, setIsPlaying]
   );
+
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedSongIds.size === 0) return;
+
+    try {
+      setDeleting(true);
+      const idsToDelete = Array.from(selectedSongIds);
+      await deleteSongs(idsToDelete);
+
+      // Update local state immediately
+      setSongs(songs.filter((s) => !selectedSongIds.has(s.id)));
+      clearSelection();
+
+      // Invalidate query cache
+      await queryClient.invalidateQueries({ queryKey: ["songs"] });
+
+      setShowDeleteConfirm(false);
+    } catch (error) {
+      console.error("Failed to delete songs:", error);
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedSongIds, songs, setSongs, clearSelection, queryClient]);
 
   const rowData: SongRowData = useMemo(
     () => ({
@@ -340,10 +368,74 @@ export function SongList() {
         />
       </div>
 
+      {/* Delete Confirmation */}
+      {showDeleteConfirm && (
+        <div className="px-3 py-2 border-t border-border bg-amber-50 dark:bg-amber-900/20">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm">
+                {t("library.deleteConfirm", {
+                  count: selectedSongIds.size,
+                  defaultValue: `Remove ${selectedSongIds.size} song(s) from library index? Files will NOT be deleted.`,
+                })}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDeleteSelected}
+                disabled={deleting}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
+              >
+                {deleting ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3 h-3" />
+                )}
+                {t("common.delete", "Delete")}
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="px-2.5 py-1 text-xs rounded border border-border hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {t("common.cancel", "Cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Status Bar */}
-      <div className="px-3 py-1.5 border-t border-border bg-background-secondary text-xs text-muted-foreground">
-        {t("library.songs", { count: filteredSongs.length })}
-        {searchQuery && ` (filtered from ${songs.length})`}
+      <div className="px-3 py-1.5 border-t border-border bg-background-secondary text-xs text-muted-foreground flex items-center justify-between">
+        <span>
+          {t("library.songs", { count: filteredSongs.length })}
+          {searchQuery && ` (filtered from ${songs.length})`}
+        </span>
+        {selectedSongIds.size > 0 && !showDeleteConfirm && (
+          <div className="flex items-center gap-2">
+            <span className="text-primary">
+              {t("library.selected", {
+                count: selectedSongIds.size,
+                defaultValue: `${selectedSongIds.size} selected`,
+              })}
+            </span>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-destructive text-destructive hover:bg-destructive/10 transition-colors"
+              title={t("library.deleteSelected", "Delete selected from index")}
+            >
+              <Trash2 className="w-3 h-3" />
+              {t("common.delete", "Delete")}
+            </button>
+            <button
+              onClick={clearSelection}
+              className="px-2 py-0.5 text-xs rounded border border-border hover:bg-accent transition-colors"
+            >
+              {t("common.clearSelection", "Clear")}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
