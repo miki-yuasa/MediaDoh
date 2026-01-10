@@ -5,6 +5,7 @@ use crate::models::RepeatMode;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
 
 /// Audio player state - thread-safe wrapper
 /// We use a separate thread for audio to avoid Send/Sync issues with rodio
@@ -14,6 +15,9 @@ pub struct AudioPlayer {
     is_playing: Arc<Mutex<bool>>,
     is_paused: Arc<Mutex<bool>>,
     current_file: Arc<Mutex<Option<PathBuf>>>,
+    // Position tracking
+    playback_start_time: Arc<Mutex<Option<Instant>>>,
+    pause_position_ms: Arc<Mutex<u64>>,
     // Command sender for the audio thread
     command_tx: std::sync::mpsc::Sender<PlayerCommand>,
 }
@@ -33,10 +37,14 @@ impl AudioPlayer {
         let volume = Arc::new(Mutex::new(1.0f32));
         let is_playing = Arc::new(Mutex::new(false));
         let is_paused = Arc::new(Mutex::new(false));
+        let playback_start_time: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        let pause_position_ms = Arc::new(Mutex::new(0u64));
 
         let volume_clone = volume.clone();
         let is_playing_clone = is_playing.clone();
         let is_paused_clone = is_paused.clone();
+        let playback_start_clone = playback_start_time.clone();
+        let pause_position_clone = pause_position_ms.clone();
 
         // Spawn audio thread
         thread::spawn(move || {
@@ -73,6 +81,8 @@ impl AudioPlayer {
                                             new_sink.append(source);
                                             *is_playing_clone.lock().unwrap() = true;
                                             *is_paused_clone.lock().unwrap() = false;
+                                            *playback_start_clone.lock().unwrap() = Some(Instant::now());
+                                            *pause_position_clone.lock().unwrap() = 0;
                                             sink = Some(new_sink);
                                         }
                                         Err(e) => {
@@ -93,12 +103,20 @@ impl AudioPlayer {
                         if let Some(ref s) = sink {
                             s.pause();
                             *is_paused_clone.lock().unwrap() = true;
+                            // Store current position when pausing
+                            if let Some(start) = *playback_start_clone.lock().unwrap() {
+                                let elapsed = start.elapsed().as_millis() as u64;
+                                let current_pause = *pause_position_clone.lock().unwrap();
+                                *pause_position_clone.lock().unwrap() = current_pause + elapsed;
+                            }
+                            *playback_start_clone.lock().unwrap() = None;
                         }
                     }
                     PlayerCommand::Resume => {
                         if let Some(ref s) = sink {
                             s.play();
                             *is_paused_clone.lock().unwrap() = false;
+                            *playback_start_clone.lock().unwrap() = Some(Instant::now());
                         }
                     }
                     PlayerCommand::Stop => {
@@ -107,6 +125,8 @@ impl AudioPlayer {
                         }
                         *is_playing_clone.lock().unwrap() = false;
                         *is_paused_clone.lock().unwrap() = false;
+                        *playback_start_clone.lock().unwrap() = None;
+                        *pause_position_clone.lock().unwrap() = 0;
                     }
                     PlayerCommand::SetVolume(vol) => {
                         *volume_clone.lock().unwrap() = vol;
@@ -124,6 +144,8 @@ impl AudioPlayer {
             is_playing,
             is_paused,
             current_file: Arc::new(Mutex::new(None)),
+            playback_start_time,
+            pause_position_ms,
             command_tx,
         })
     }
@@ -190,8 +212,15 @@ impl AudioPlayer {
 
     /// Get current position in milliseconds
     pub fn get_position_ms(&self) -> u64 {
-        // Note: Position tracking requires a custom implementation
-        0
+        let pause_position = *self.pause_position_ms.lock().unwrap();
+        
+        if let Some(start) = *self.playback_start_time.lock().unwrap() {
+            // Currently playing - add elapsed time to pause position
+            pause_position + start.elapsed().as_millis() as u64
+        } else {
+            // Paused or stopped - return stored position
+            pause_position
+        }
     }
 
     /// Set repeat mode

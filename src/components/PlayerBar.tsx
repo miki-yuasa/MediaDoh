@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Play,
@@ -12,7 +13,8 @@ import {
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { usePlayerStore } from "@/store";
-import { playSong, pause, resume, setVolume } from "@/api/tauri";
+import { playSong, pause, resume, setVolume, getPlayerState } from "@/api/tauri";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 export function PlayerBar() {
   const { t } = useTranslation();
@@ -33,7 +35,35 @@ export function PlayerBar() {
     toggleShuffle,
     nextTrack,
     previousTrack,
+    setPosition,
   } = usePlayerStore();
+  
+  const intervalRef = useRef<number | null>(null);
+
+  // Poll player state for position updates
+  useEffect(() => {
+    if (isPlaying && !isPaused) {
+      intervalRef.current = window.setInterval(async () => {
+        try {
+          const state = await getPlayerState();
+          setPosition(state.positionMs);
+        } catch (error) {
+          console.error("Failed to get player state:", error);
+        }
+      }, 500); // Update every 500ms
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [isPlaying, isPaused, setPosition]);
 
   const handlePlayPause = async () => {
     if (!currentSong) return;
@@ -97,9 +127,9 @@ export function PlayerBar() {
         {currentSong ? (
           <>
             <div className="w-12 h-12 bg-muted rounded flex-shrink-0 flex items-center justify-center">
-              {currentSong.hasEmbeddedArt ? (
+              {currentSong.artCachePath ? (
                 <img
-                  src={currentSong.artCachePath || ""}
+                  src={convertFileSrc(currentSong.artCachePath)}
                   alt={currentSong.album || ""}
                   className="w-full h-full object-cover rounded"
                 />

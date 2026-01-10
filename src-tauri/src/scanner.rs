@@ -8,10 +8,49 @@ use lofty::prelude::*;
 use lofty::probe::Probe;
 use sha2::{Digest, Sha256};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
+
+/// Get the artwork cache directory
+fn get_artwork_cache_dir() -> Result<PathBuf> {
+    let cache_dir = dirs::cache_dir()
+        .ok_or_else(|| MediaDohError::InvalidPath("Cannot find cache directory".to_string()))?
+        .join("MediaDoh")
+        .join("artwork");
+    std::fs::create_dir_all(&cache_dir)?;
+    Ok(cache_dir)
+}
+
+/// Extract and cache album artwork from audio file
+fn extract_and_cache_artwork(path: &Path, album_key: &str) -> Option<PathBuf> {
+    let cache_dir = get_artwork_cache_dir().ok()?;
+    
+    // Create a safe filename from album key
+    let safe_name: String = album_key
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let artwork_path = cache_dir.join(format!("{}.jpg", safe_name));
+    
+    // If artwork already cached, return path
+    if artwork_path.exists() {
+        return Some(artwork_path);
+    }
+    
+    // Extract artwork from file
+    let tagged_file = Probe::open(path).ok()?.read().ok()?;
+    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag())?;
+    let picture = tag.pictures().first()?;
+    
+    // Write to cache
+    let mut file = File::create(&artwork_path).ok()?;
+    file.write_all(picture.data()).ok()?;
+    
+    log::debug!("Cached artwork: {}", artwork_path.display());
+    Some(artwork_path)
+}
 
 /// Supported audio file extensions
 const AUDIO_EXTENSIONS: &[&str] = &[
@@ -26,8 +65,22 @@ fn is_audio_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Scan progress event payload
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanProgress {
+    pub scanned: usize,
+    pub current_file: String,
+}
+
 /// Scan a directory recursively for audio files
-pub async fn scan_directory(path: &PathBuf, pool: &DbPool) -> Result<Vec<Song>> {
+pub async fn scan_directory(
+    path: &PathBuf, 
+    pool: &DbPool, 
+    app: Option<&tauri::AppHandle>,
+) -> Result<Vec<Song>> {
+    use tauri::Emitter;
+    
     let path = dunce::canonicalize(path).map_err(|e| {
         MediaDohError::InvalidPath(format!("Cannot canonicalize path: {}", e))
     })?;
@@ -49,7 +102,23 @@ pub async fn scan_directory(path: &PathBuf, pool: &DbPool) -> Result<Vec<Song>> 
                     let exists = check_song_exists(pool, &song.file_path).await?;
                     if !exists {
                         insert_song(pool, &song).await?;
+                        
+                        // Emit event for each new song
+                        if let Some(app_handle) = app {
+                            let _ = app_handle.emit("song-added", &song);
+                        }
+                        
                         songs.push(song);
+                        
+                        // Emit progress event every 10 songs
+                        if songs.len() % 10 == 0 {
+                            if let Some(app_handle) = app {
+                                let _ = app_handle.emit("scan-progress", ScanProgress {
+                                    scanned: songs.len(),
+                                    current_file: file_path.to_string_lossy().to_string(),
+                                });
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -121,8 +190,20 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
 
     let is_lossless = format.is_lossless();
 
-    // Check for embedded album art
+    // Check for embedded album art and extract it
     let has_embedded_art = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
+    
+    // Extract and cache artwork if available
+    let art_cache_path = if has_embedded_art {
+        let album_key = format!(
+            "{}-{}",
+            album_artist.as_deref().or(artist.as_deref()).unwrap_or("Unknown"),
+            album.as_deref().unwrap_or("Unknown")
+        );
+        extract_and_cache_artwork(&path, &album_key)
+    } else {
+        None
+    };
 
     let now = Utc::now();
 
@@ -151,7 +232,7 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
         format,
         is_lossless,
         has_embedded_art,
-        art_cache_path: None,
+        art_cache_path,
         date_added: now,
         date_modified: now,
         last_played: None,

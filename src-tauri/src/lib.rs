@@ -80,6 +80,13 @@ pub fn run() {
             commands::set_theme,
             commands::get_view_mode,
             commands::set_view_mode,
+            // Library folder commands
+            commands::get_library_folders,
+            commands::add_library_folder,
+            commands::remove_library_folder,
+            commands::set_default_library_folder,
+            commands::get_default_library_folder,
+            commands::scan_all_libraries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

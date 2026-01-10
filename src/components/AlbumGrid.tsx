@@ -7,6 +7,7 @@ import { formatDuration } from "@/lib/utils";
 import { useLibraryStore } from "@/store";
 import { useQuery } from "@tanstack/react-query";
 import { getSongs } from "@/api/tauri";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Album, Song } from "@/types";
 
 const CARD_WIDTH = 180;
@@ -56,12 +57,17 @@ interface AlbumCardProps {
 }
 
 function AlbumCard({ album, onClick }: AlbumCardProps) {
+  // Convert local file path to URL that Tauri can load
+  const artworkUrl = album.artCachePath 
+    ? convertFileSrc(album.artCachePath) 
+    : null;
+
   return (
     <div className="album-card" onClick={onClick}>
       <div className="album-art">
-        {album.artCachePath ? (
+        {artworkUrl ? (
           <img
-            src={album.artCachePath}
+            src={artworkUrl}
             alt={album.title}
             className="w-full h-full object-cover"
             loading="lazy"

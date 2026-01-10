@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { debounce } from "lodash-es";
 import {
@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useUIStore, useLibraryStore } from "@/store";
 import { open } from "@tauri-apps/plugin-dialog";
-import { scanLibrary } from "@/api/tauri";
+import { scanLibrary, onSongAdded, onScanCompleted } from "@/api/tauri";
 import { useQueryClient } from "@tanstack/react-query";
 import { SongList } from "./SongList";
 import { AlbumGrid } from "./AlbumGrid";
@@ -22,6 +22,31 @@ export function MainContent() {
   const { activeSection, viewMode, setViewMode } = useUIStore();
   const { setSearchQuery, isScanning, setIsScanning } = useLibraryStore();
   const queryClient = useQueryClient();
+
+  // Listen for song-added events during scanning for incremental updates
+  useEffect(() => {
+    let unlistenSongAdded: (() => void) | null = null;
+    let unlistenScanCompleted: (() => void) | null = null;
+
+    const setupListeners = async () => {
+      unlistenSongAdded = await onSongAdded(() => {
+        // Invalidate and refetch songs query when a new song is added
+        queryClient.invalidateQueries({ queryKey: ["songs"] });
+      });
+
+      unlistenScanCompleted = await onScanCompleted(() => {
+        setIsScanning(false);
+        queryClient.invalidateQueries({ queryKey: ["songs"] });
+      });
+    };
+
+    setupListeners();
+
+    return () => {
+      if (unlistenSongAdded) unlistenSongAdded();
+      if (unlistenScanCompleted) unlistenScanCompleted();
+    };
+  }, [queryClient, setIsScanning]);
 
   // Debounced search
   const debouncedSearch = useMemo(
@@ -46,15 +71,17 @@ export function MainContent() {
 
       if (selected) {
         setIsScanning(true);
-        await scanLibrary(selected as string);
-        await queryClient.invalidateQueries({ queryKey: ["songs"] });
-        setIsScanning(false);
+        // Start scanning - events will handle incremental updates
+        scanLibrary(selected as string).catch((error) => {
+          console.error("Failed to scan folder:", error);
+          setIsScanning(false);
+        });
       }
     } catch (error) {
-      console.error("Failed to scan folder:", error);
+      console.error("Failed to open folder dialog:", error);
       setIsScanning(false);
     }
-  }, [t, setIsScanning, queryClient]);
+  }, [t, setIsScanning]);
 
   // Render content based on active section
   const renderContent = () => {

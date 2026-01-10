@@ -9,7 +9,7 @@ use crate::scanner::{get_all_songs, scan_directory};
 use crate::sync::{compare_with_device, sync_to_device, SyncComparison, SyncResult};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 /// Application state managed by Tauri
 pub struct AppState {
@@ -17,15 +17,39 @@ pub struct AppState {
     pub player: Mutex<AudioPlayer>,
 }
 
+/// Library folder info
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFolder {
+    pub id: String,
+    pub path: String,
+    pub is_enabled: bool,
+    pub last_scan: Option<String>,
+    pub file_count: i32,
+    pub date_added: String,
+}
+
 // ============================================================================
 // Library Commands
 // ============================================================================
 
-/// Scan a directory for music files
+/// Scan a directory for music files with progress events
 #[tauri::command]
-pub async fn scan_library(path: String, state: State<'_, AppState>) -> Result<Vec<Song>> {
-    let path = PathBuf::from(path);
-    let songs = scan_directory(&path, &state.db).await?;
+pub async fn scan_library(
+    path: String, 
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Vec<Song>> {
+    let path = PathBuf::from(&path);
+    
+    // Emit scan started event
+    let _ = app.emit("scan-started", &path.to_string_lossy().to_string());
+    
+    let songs = scan_directory(&path, &state.db, Some(&app)).await?;
+    
+    // Emit scan completed event
+    let _ = app.emit("scan-completed", songs.len());
+    
     Ok(songs)
 }
 
@@ -236,4 +260,117 @@ pub async fn set_view_mode(mode: ViewMode, state: State<'_, AppState>) -> Result
         ViewMode::Grid => "grid",
     };
     set_setting("view_mode".to_string(), value.to_string(), state).await
+}
+
+// ============================================================================
+// Library Folder Commands
+// ============================================================================
+
+/// Get all library folders
+#[tauri::command]
+pub async fn get_library_folders(state: State<'_, AppState>) -> Result<Vec<LibraryFolder>> {
+    let rows = sqlx::query_as::<_, (String, String, i32, Option<String>, i32, String)>(
+        "SELECT id, path, is_enabled, last_scan, file_count, date_added FROM library_folders ORDER BY date_added"
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(rows.into_iter().map(|(id, path, is_enabled, last_scan, file_count, date_added)| {
+        LibraryFolder {
+            id,
+            path,
+            is_enabled: is_enabled != 0,
+            last_scan,
+            file_count,
+            date_added,
+        }
+    }).collect())
+}
+
+/// Add a library folder
+#[tauri::command]
+pub async fn add_library_folder(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<LibraryFolder> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    sqlx::query(
+        "INSERT INTO library_folders (id, path, is_enabled, file_count, date_added) VALUES (?, ?, 1, 0, ?)"
+    )
+    .bind(&id)
+    .bind(&path)
+    .bind(&now)
+    .execute(&state.db)
+    .await?;
+
+    Ok(LibraryFolder {
+        id,
+        path,
+        is_enabled: true,
+        last_scan: None,
+        file_count: 0,
+        date_added: now,
+    })
+}
+
+/// Remove a library folder
+#[tauri::command]
+pub async fn remove_library_folder(id: String, state: State<'_, AppState>) -> Result<()> {
+    sqlx::query("DELETE FROM library_folders WHERE id = ?")
+        .bind(&id)
+        .execute(&state.db)
+        .await?;
+    Ok(())
+}
+
+/// Set default library folder (the one that auto-scans)
+#[tauri::command]
+pub async fn set_default_library_folder(path: String, state: State<'_, AppState>) -> Result<()> {
+    set_setting("default_library_folder".to_string(), path, state).await
+}
+
+/// Get default library folder
+#[tauri::command]
+pub async fn get_default_library_folder(state: State<'_, AppState>) -> Result<Option<String>> {
+    get_setting("default_library_folder".to_string(), state).await
+}
+
+/// Scan all enabled library folders
+#[tauri::command]
+pub async fn scan_all_libraries(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Vec<Song>> {
+    let folders = get_library_folders(state.clone()).await?;
+    let mut all_songs = Vec::new();
+
+    for folder in folders {
+        if folder.is_enabled {
+            let path = PathBuf::from(&folder.path);
+            match scan_directory(&path, &state.db, Some(&app)).await {
+                Ok(songs) => {
+                    // Update folder file count
+                    let count = songs.len() as i32;
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let _ = sqlx::query(
+                        "UPDATE library_folders SET file_count = file_count + ?, last_scan = ? WHERE id = ?"
+                    )
+                    .bind(count)
+                    .bind(&now)
+                    .bind(&folder.id)
+                    .execute(&state.db)
+                    .await;
+
+                    all_songs.extend(songs);
+                }
+                Err(e) => {
+                    log::error!("Failed to scan {}: {}", folder.path, e);
+                }
+            }
+        }
+    }
+
+    Ok(all_songs)
 }
