@@ -116,6 +116,8 @@ pub struct GraphParentReference {
 /// OneDrive API client
 pub struct OneDriveClient {
     http_client: Client,
+    /// HTTP client that doesn't follow redirects (for capturing 302 Location headers)
+    no_redirect_client: Client,
     tokens: Arc<RwLock<Option<OneDriveTokens>>>,
     client_id: Arc<RwLock<String>>,
 }
@@ -125,6 +127,10 @@ impl OneDriveClient {
     pub fn new(client_id: Option<String>) -> Self {
         Self {
             http_client: Client::new(),
+            no_redirect_client: Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap_or_else(|_| Client::new()),
             tokens: Arc::new(RwLock::new(None)),
             client_id: Arc::new(RwLock::new(
                 client_id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()),
@@ -371,10 +377,20 @@ impl OneDriveClient {
             )));
         }
 
-        let file_info: OneDriveFileInfo = response
-            .json::<OneDriveFileInfo>()
+        // Get the response text first to log it
+        let response_text = response
+            .text()
             .await
-            .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+
+        // Log the raw API response
+        log::info!("=== OneDrive API Response for '{}' ===", encoded_path);
+        log::info!("{}", response_text);
+        log::info!("=== End API Response ===");
+
+        // Parse the JSON
+        let file_info: OneDriveFileInfo = serde_json::from_str(&response_text)
+            .map_err(|e| MediaDohError::Network(format!("Failed to parse API response: {}", e)))?;
 
         Ok(file_info)
     }
@@ -481,6 +497,305 @@ impl OneDriveClient {
             .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
 
         Ok(Some(thumb.url))
+    }
+
+    /// Get the download URL for a file by calling /content and capturing the 302 redirect Location
+    /// This is more reliable than @microsoft.graph.downloadUrl which may not be included
+    pub async fn get_download_url(&self, file_id: &str) -> Result<String> {
+        if !self.is_authenticated().await {
+            self.refresh_tokens().await?;
+        }
+
+        let tokens = self.tokens.read().await;
+        let access_token = tokens
+            .as_ref()
+            .map(|t| t.access_token.clone())
+            .ok_or_else(|| MediaDohError::Network("Not authenticated".to_string()))?;
+
+        let url = format!("{}/me/drive/items/{}/content", GRAPH_API_BASE, file_id);
+
+        log::info!(
+            "Requesting download URL via /content endpoint for file ID: {}",
+            file_id
+        );
+
+        // Use the no-redirect client to capture the 302 Location header
+        let response = self
+            .no_redirect_client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .send()
+            .await
+            .map_err(|e| MediaDohError::Network(format!("Content request failed: {}", e)))?;
+
+        let status = response.status();
+
+        // Expect a 302 redirect
+        if status == reqwest::StatusCode::FOUND {
+            if let Some(location) = response.headers().get("location") {
+                let download_url = location
+                    .to_str()
+                    .map_err(|_| MediaDohError::Network("Invalid Location header".to_string()))?
+                    .to_string();
+                log::info!("Got download URL from 302 redirect");
+                return Ok(download_url);
+            }
+        }
+
+        // Some responses might be 200 with direct content (rare for large files)
+        if status.is_success() {
+            return Err(MediaDohError::Network(
+                "Got direct content instead of redirect - file may be too small".to_string(),
+            ));
+        }
+
+        let error_text = response.text().await.unwrap_or_default();
+        Err(MediaDohError::Network(format!(
+            "Failed to get download URL ({}): {}",
+            status, error_text
+        )))
+    }
+
+    /// Fetch partial file content using HTTP Range requests
+    /// This is used to get metadata without downloading the full file
+    pub async fn fetch_partial_content(
+        &self,
+        download_url: &str,
+        start: u64,
+        end: u64,
+    ) -> Result<Vec<u8>> {
+        let response = self
+            .http_client
+            .get(download_url)
+            .header("Range", format!("bytes={}-{}", start, end))
+            .send()
+            .await
+            .map_err(|e| MediaDohError::Network(format!("Range request failed: {}", e)))?;
+
+        // Accept both 200 (full content) and 206 (partial content)
+        if !response.status().is_success() {
+            let status = response.status();
+            return Err(MediaDohError::Network(format!(
+                "Range request failed with status: {}",
+                status
+            )));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| MediaDohError::Network(format!("Failed to read response body: {}", e)))?;
+
+        Ok(bytes.to_vec())
+    }
+
+    /// Parse audio metadata from partial file content using lofty
+    /// Returns the metadata if successfully parsed, or an error if more data is needed
+    pub fn parse_metadata_from_bytes(
+        data: &[u8],
+        file_name: &str,
+    ) -> Result<OneDriveAudioMetadata> {
+        use lofty::prelude::*;
+        use lofty::probe::Probe;
+        use std::io::Cursor;
+
+        let cursor = Cursor::new(data);
+
+        // Use Probe to read from a Cursor (in-memory data)
+        let tagged_file = Probe::new(cursor)
+            .guess_file_type()
+            .map_err(|e| MediaDohError::Metadata(format!("Failed to detect file type: {}", e)))?
+            .read()
+            .map_err(|e| MediaDohError::Metadata(format!("Failed to parse metadata: {}", e)))?;
+
+        // Extract metadata from tags
+        let tag = tagged_file
+            .primary_tag()
+            .or_else(|| tagged_file.first_tag());
+
+        let metadata = OneDriveAudioMetadata {
+            title: tag
+                .and_then(|t| t.title().map(|s| s.to_string()))
+                .or_else(|| {
+                    // Fall back to filename without extension
+                    file_name.rsplit_once('.').map(|(name, _)| name.to_string())
+                }),
+            artist: tag.and_then(|t| t.artist().map(|s| s.to_string())),
+            album: tag.and_then(|t| t.album().map(|s| s.to_string())),
+            album_artist: tag.and_then(|t| {
+                t.get_string(&lofty::tag::ItemKey::AlbumArtist)
+                    .map(|s| s.to_string())
+            }),
+            track: tag.and_then(|t| t.track()),
+            track_count: tag.and_then(|t| t.track_total()),
+            disc: tag.and_then(|t| t.disk()),
+            disc_count: tag.and_then(|t| t.disk_total()),
+            year: tag.and_then(|t| t.year()).map(|y| y as i32),
+            genre: tag.and_then(|t| t.genre().map(|s| s.to_string())),
+            duration_ms: tagged_file
+                .properties()
+                .duration()
+                .as_millis()
+                .try_into()
+                .ok(),
+            bitrate: tagged_file.properties().audio_bitrate(),
+        };
+
+        Ok(metadata)
+    }
+
+    /// Fetch audio metadata using Range requests
+    /// This fetches the first ~50KB of the file to parse metadata without downloading the full file
+    pub async fn fetch_metadata_via_range(
+        &self,
+        download_url: &str,
+        file_name: &str,
+        file_size: u64,
+    ) -> Result<OneDriveAudioMetadata> {
+        // Start with 50KB - enough for most ID3v2 headers and metadata
+        const INITIAL_CHUNK: u64 = 50 * 1024; // 50KB
+                                              // ID3v2 headers can be large, but typically metadata is in first 256KB
+        const MAX_CHUNK: u64 = 256 * 1024; // 256KB max
+
+        let mut chunk_size = INITIAL_CHUNK;
+
+        loop {
+            let end = std::cmp::min(chunk_size - 1, file_size - 1);
+
+            log::info!(
+                "Fetching bytes 0-{} of {} for '{}'",
+                end,
+                file_size,
+                file_name
+            );
+
+            let data = self.fetch_partial_content(download_url, 0, end).await?;
+
+            log::info!(
+                "Received {} bytes, attempting to parse metadata",
+                data.len()
+            );
+
+            // Check for ID3v2 header and see if we need more data
+            if data.len() >= 10 && &data[0..3] == b"ID3" {
+                // ID3v2 header: bytes 6-9 are size (syncsafe integer)
+                let size = ((data[6] as u32 & 0x7F) << 21)
+                    | ((data[7] as u32 & 0x7F) << 14)
+                    | ((data[8] as u32 & 0x7F) << 7)
+                    | (data[9] as u32 & 0x7F);
+                let total_tag_size = size + 10; // Add 10 bytes for header
+
+                log::info!("ID3v2 tag detected, total size: {} bytes", total_tag_size);
+
+                if (data.len() as u32) < total_tag_size && chunk_size < MAX_CHUNK {
+                    // Need more data for complete ID3 tag
+                    chunk_size = std::cmp::min((total_tag_size as u64) + 1024, MAX_CHUNK);
+                    log::info!("Need more data, increasing chunk to {} bytes", chunk_size);
+                    continue;
+                }
+            }
+
+            // Try to parse the metadata
+            match Self::parse_metadata_from_bytes(&data, file_name) {
+                Ok(metadata) => {
+                    log::info!(
+                        "Successfully parsed metadata: title={:?}, artist={:?}, album={:?}",
+                        metadata.title,
+                        metadata.artist,
+                        metadata.album
+                    );
+                    return Ok(metadata);
+                }
+                Err(e) => {
+                    // If we haven't maxed out yet, try fetching more data
+                    if chunk_size < MAX_CHUNK {
+                        chunk_size = std::cmp::min(chunk_size * 2, MAX_CHUNK);
+                        log::info!("Parse failed ({}), retrying with {} bytes", e, chunk_size);
+                        continue;
+                    }
+
+                    // Give up and return basic metadata from filename
+                    log::warn!(
+                        "Failed to parse metadata after fetching {} bytes: {}",
+                        data.len(),
+                        e
+                    );
+                    return Ok(OneDriveAudioMetadata {
+                        title: file_name.rsplit_once('.').map(|(name, _)| name.to_string()),
+                        artist: None,
+                        album: None,
+                        album_artist: None,
+                        track: None,
+                        track_count: None,
+                        disc: None,
+                        disc_count: None,
+                        year: None,
+                        genre: None,
+                        duration_ms: None,
+                        bitrate: None,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Get metadata for a file using HTTP Range requests
+    /// This is the primary method for extracting metadata from OneDrive files
+    /// because the Graph API audio facet is often missing on Business accounts
+    pub async fn get_file_metadata_with_fallback(
+        &self,
+        onedrive_path: &str,
+    ) -> Result<(OneDriveFileInfo, OneDriveAudioMetadata)> {
+        let file_info = self.get_file_metadata(onedrive_path).await?;
+
+        log::info!(
+            "File info for '{}': size={}, has_audio_facet={}",
+            file_info.name,
+            file_info.size,
+            file_info.audio.is_some()
+        );
+
+        // Always use Range requests to get metadata - more reliable than Graph API audio facet
+        // The audio facet is often missing on OneDrive Business accounts
+        log::info!(
+            "Fetching metadata via Range request for '{}'",
+            file_info.name
+        );
+
+        // Get download URL by calling /content endpoint and capturing 302 redirect
+        let download_url = match self.get_download_url(&file_info.id).await {
+            Ok(url) => url,
+            Err(e) => {
+                log::warn!("Failed to get download URL for '{}': {}", file_info.name, e);
+                // Fall back to filename as title
+                let title = file_info
+                    .name
+                    .rsplit_once('.')
+                    .map(|(name, _)| name.to_string());
+                return Ok((
+                    file_info,
+                    OneDriveAudioMetadata {
+                        title,
+                        artist: None,
+                        album: None,
+                        album_artist: None,
+                        track: None,
+                        track_count: None,
+                        disc: None,
+                        disc_count: None,
+                        year: None,
+                        genre: None,
+                        duration_ms: None,
+                        bitrate: None,
+                    },
+                ));
+            }
+        };
+
+        let metadata = self
+            .fetch_metadata_via_range(&download_url, &file_info.name, file_info.size)
+            .await?;
+        Ok((file_info, metadata))
     }
 }
 

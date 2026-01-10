@@ -137,6 +137,7 @@ interface LibraryStore {
   // State
   songs: Song[];
   selectedSongIds: Set<string>;
+  lastSelectedSongId: string | null;
   isLoading: boolean;
   isScanning: boolean;
   error: string | null;
@@ -149,7 +150,8 @@ interface LibraryStore {
   addSongs: (songs: Song[]) => void;
   selectSong: (
     id: string,
-    options?: { multi?: boolean; range?: boolean }
+    options?: { multi?: boolean; range?: boolean },
+    allSongIds?: string[]
   ) => void;
   selectSongs: (ids: string[]) => void;
   clearSelection: () => void;
@@ -167,6 +169,7 @@ export const useLibraryStore = create<LibraryStore>()(
       // Initial state
       songs: [],
       selectedSongIds: new Set(),
+      lastSelectedSongId: null,
       isLoading: false,
       isScanning: false,
       error: null,
@@ -179,22 +182,44 @@ export const useLibraryStore = create<LibraryStore>()(
       addSongs: (songs) =>
         set((state) => ({ songs: [...state.songs, ...songs] })),
 
-      selectSong: (id, options = {}) => {
-        const { multi = false } = options;
-        const { selectedSongIds } = get();
+      selectSong: (id, options = {}, allSongIds = []) => {
+        const { multi = false, range = false } = options;
+        const { selectedSongIds, lastSelectedSongId } = get();
+
+        // Range selection (shift+click)
+        if (range && lastSelectedSongId && allSongIds.length > 0) {
+          const lastIndex = allSongIds.indexOf(lastSelectedSongId);
+          const currentIndex = allSongIds.indexOf(id);
+
+          if (lastIndex !== -1 && currentIndex !== -1) {
+            const start = Math.min(lastIndex, currentIndex);
+            const end = Math.max(lastIndex, currentIndex);
+            const rangeIds = allSongIds.slice(start, end + 1);
+            const newSelection = new Set(selectedSongIds);
+            rangeIds.forEach((songId) => newSelection.add(songId));
+            set({ selectedSongIds: newSelection });
+            return;
+          }
+        }
+
         const newSelection = new Set(multi ? selectedSongIds : []);
 
-        if (newSelection.has(id)) {
+        if (newSelection.has(id) && multi) {
           newSelection.delete(id);
         } else {
           newSelection.add(id);
         }
 
-        set({ selectedSongIds: newSelection });
+        set({ selectedSongIds: newSelection, lastSelectedSongId: id });
       },
 
-      selectSongs: (ids) => set({ selectedSongIds: new Set(ids) }),
-      clearSelection: () => set({ selectedSongIds: new Set() }),
+      selectSongs: (ids) =>
+        set({
+          selectedSongIds: new Set(ids),
+          lastSelectedSongId: ids[ids.length - 1] || null,
+        }),
+      clearSelection: () =>
+        set({ selectedSongIds: new Set(), lastSelectedSongId: null }),
       setLoading: (isLoading) => set({ isLoading }),
       setIsScanning: (isScanning) => set({ isScanning }),
       setError: (error) => set({ error }),

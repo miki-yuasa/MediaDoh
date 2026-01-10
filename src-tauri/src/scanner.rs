@@ -4,7 +4,7 @@ use crate::database::DbPool;
 use crate::error::{MediaDohError, Result};
 use crate::models::{AudioFormat, Song, SyncStatus};
 use crate::onedrive::{
-    get_cloud_file_status, graph_metadata_to_audio, local_path_to_onedrive_path, CloudFileStatus,
+    get_cloud_file_status, local_path_to_onedrive_path, CloudFileStatus,
     OneDriveClient,
 };
 use chrono::Utc;
@@ -173,29 +173,59 @@ pub async fn scan_directory_with_options(
                                     Ok(song) => Ok(song),
                                     Err(e) => {
                                         log::warn!(
-                                            "Failed to get OneDrive metadata for {}: {}",
+                                            "Failed to get OneDrive metadata for {}: {} - Attempting local parse as fallback",
                                             file_path.display(),
                                             e
                                         );
+                                        // Try to parse locally as fallback even for cloud-only files
+                                        // This will trigger OneDrive to download the file temporarily
+                                        match parse_audio_file(file_path).await {
+                                            Ok(song) => {
+                                                log::info!("Successfully parsed cloud-only file locally: {}", file_path.display());
+                                                Ok(song)
+                                            }
+                                            Err(e2) => {
+                                                log::error!(
+                                                    "Both OneDrive API and local parse failed for {}: API error: {}, Local error: {}",
+                                                    file_path.display(),
+                                                    e,
+                                                    e2
+                                                );
+                                                skipped_cloud += 1;
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                log::warn!(
+                                    "OneDrive not authenticated, attempting local parse for cloud file: {}",
+                                    file_path.display()
+                                );
+                                // Try local parse even without OneDrive auth
+                                match parse_audio_file(file_path).await {
+                                    Ok(song) => Ok(song),
+                                    Err(e) => {
+                                        log::error!("Failed to parse cloud-only file without OneDrive auth: {}", e);
                                         skipped_cloud += 1;
                                         continue;
                                     }
                                 }
-                            } else {
-                                log::debug!(
-                                    "OneDrive not authenticated, skipping: {}",
-                                    file_path.display()
-                                );
-                                skipped_cloud += 1;
-                                continue;
                             }
                         } else {
-                            log::debug!(
-                                "No OneDrive client, skipping cloud file: {}",
+                            log::warn!(
+                                "No OneDrive client, attempting local parse for cloud file: {}",
                                 file_path.display()
                             );
-                            skipped_cloud += 1;
-                            continue;
+                            // Try local parse even without OneDrive client
+                            match parse_audio_file(file_path).await {
+                                Ok(song) => Ok(song),
+                                Err(e) => {
+                                    log::error!("Failed to parse cloud-only file without OneDrive client: {}", e);
+                                    skipped_cloud += 1;
+                                    continue;
+                                }
+                            }
                         }
                     } else {
                         skipped_cloud += 1;
@@ -262,33 +292,52 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
         .to_string();
 
     // Convert local path to OneDrive path
-    let onedrive_path = local_path_to_onedrive_path(&path)
-        .ok_or_else(|| MediaDohError::InvalidPath("Cannot determine OneDrive path".to_string()))?;
+    let onedrive_path = local_path_to_onedrive_path(&path).ok_or_else(|| {
+        log::error!("Cannot determine OneDrive path for: {}", path.display());
+        MediaDohError::InvalidPath(format!(
+            "Cannot determine OneDrive path for: {}",
+            path.display()
+        ))
+    })?;
 
-    log::debug!("Fetching OneDrive metadata for: {}", onedrive_path);
+    log::debug!(
+        "Fetching OneDrive metadata for: {} (local path: {})",
+        onedrive_path,
+        path.display()
+    );
 
-    // Get metadata from OneDrive API
-    let file_info = client.get_file_metadata(&onedrive_path).await?;
+    // Get metadata from OneDrive API with Range request fallback
+    let (file_info, metadata) = match client.get_file_metadata_with_fallback(&onedrive_path).await {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!(
+                "OneDrive API error for {}: {} (OneDrive path: {})",
+                file_name,
+                e,
+                onedrive_path
+            );
+            return Err(e);
+        }
+    };
 
     // Log what we got from the API
-    log::debug!(
-        "OneDrive file info - name: {}, size: {}, has_audio: {}",
+    log::info!(
+        "OneDrive file info - name: {}, size: {}, has_audio_facet: {}",
         file_info.name,
         file_info.size,
         file_info.audio.is_some()
     );
 
-    if let Some(ref audio) = file_info.audio {
-        log::debug!(
-            "Audio metadata - title: {:?}, artist: {:?}, album: {:?}, duration: {:?}",
-            audio.title,
-            audio.artist,
-            audio.album,
-            audio.duration
-        );
-    }
-
-    let metadata = graph_metadata_to_audio(&file_info);
+    log::info!(
+        "Final metadata - title: {:?}, artist: {:?}, album: {:?}, album_artist: {:?}, track: {:?}, duration: {:?}ms, bitrate: {:?}",
+        metadata.title,
+        metadata.artist,
+        metadata.album,
+        metadata.album_artist,
+        metadata.track,
+        metadata.duration_ms,
+        metadata.bitrate
+    );
 
     // Determine format from extension
     let format = path

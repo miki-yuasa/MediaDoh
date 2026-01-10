@@ -12,11 +12,17 @@ import {
   FileText,
   Play,
   ListPlus,
+  Save,
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getSongs, playSong, deleteSongs } from "@/api/tauri";
+import {
+  getSongs,
+  playSong,
+  deleteSongs,
+  updateSongMetadata,
+} from "@/api/tauri";
 import type { Song, SongGroup } from "@/types";
 
 const ROW_HEIGHT = 32;
@@ -28,6 +34,8 @@ interface SongRowData {
   onSongClick: (e: React.MouseEvent, songId: string) => void;
   onSongDoubleClick: (song: Song) => void;
   onSongContextMenu: (e: React.MouseEvent, song: Song) => void;
+  onMouseDown: (e: React.MouseEvent, songId: string) => void;
+  onMouseEnter: (songId: string) => void;
 }
 
 interface SongRowProps {
@@ -38,6 +46,8 @@ interface SongRowProps {
   onClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onMouseDown: (e: React.MouseEvent) => void;
+  onMouseEnter: () => void;
 }
 
 function SongRow({
@@ -48,6 +58,8 @@ function SongRow({
   onClick,
   onDoubleClick,
   onContextMenu,
+  onMouseDown,
+  onMouseEnter,
 }: SongRowProps) {
   const SyncIndicator = () => {
     switch (song.syncStatus) {
@@ -63,13 +75,15 @@ function SongRow({
   return (
     <div
       className={cn(
-        "song-row",
+        "song-row select-none",
         isSelected && "selected",
         isPlaying && "playing"
       )}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      onMouseDown={onMouseDown}
+      onMouseEnter={onMouseEnter}
     >
       <div className="w-8 flex-shrink-0">
         {showAlbumArt ? (
@@ -174,6 +188,8 @@ function VirtualRow({
         onClick={(e) => rowProps.onSongClick(e, song.id)}
         onDoubleClick={() => rowProps.onSongDoubleClick(song)}
         onContextMenu={(e) => rowProps.onSongContextMenu(e, song)}
+        onMouseDown={(e) => rowProps.onMouseDown(e, song.id)}
+        onMouseEnter={() => rowProps.onMouseEnter(song.id)}
       />
     </div>
   );
@@ -188,6 +204,7 @@ export function SongList() {
     setSongs,
     selectedSongIds,
     selectSong,
+    selectSongs,
     clearSelection,
     searchQuery,
   } = useLibraryStore();
@@ -205,6 +222,10 @@ export function SongList() {
   const [showMetadataEditor, setShowMetadataEditor] = useState(false);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Drag selection state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartIndex, setDragStartIndex] = useState<number | null>(null);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -289,14 +310,63 @@ export function SongList() {
     return items;
   }, [songGroups]);
 
+  // Get all song IDs in display order for range selection
+  const allSongIds = useMemo(
+    () => flattenedList.map((item) => item.song.id),
+    [flattenedList]
+  );
+
   const handleSongClick = useCallback(
     (e: React.MouseEvent, songId: string) => {
-      selectSong(songId, {
-        multi: e.metaKey || e.ctrlKey,
-      });
+      selectSong(
+        songId,
+        {
+          multi: e.metaKey || e.ctrlKey,
+          range: e.shiftKey,
+        },
+        allSongIds
+      );
     },
-    [selectSong]
+    [selectSong, allSongIds]
   );
+
+  // Drag selection handlers
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent, songId: string) => {
+      if (e.button !== 0) return; // Only left click
+      const index = allSongIds.indexOf(songId);
+      if (index !== -1) {
+        setIsDragging(true);
+        setDragStartIndex(index);
+      }
+    },
+    [allSongIds]
+  );
+
+  const handleMouseEnter = useCallback(
+    (songId: string) => {
+      if (!isDragging || dragStartIndex === null) return;
+
+      const currentIndex = allSongIds.indexOf(songId);
+      if (currentIndex === -1) return;
+
+      const start = Math.min(dragStartIndex, currentIndex);
+      const end = Math.max(dragStartIndex, currentIndex);
+      const rangeIds = allSongIds.slice(start, end + 1);
+      selectSongs(rangeIds);
+    },
+    [isDragging, dragStartIndex, allSongIds, selectSongs]
+  );
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setDragStartIndex(null);
+    };
+
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => document.removeEventListener("mouseup", handleMouseUp);
+  }, []);
 
   const handleSongDoubleClick = useCallback(
     async (song: Song) => {
@@ -391,6 +461,8 @@ export function SongList() {
       onSongClick: handleSongClick,
       onSongDoubleClick: handleSongDoubleClick,
       onSongContextMenu: handleSongContextMenu,
+      onMouseDown: handleMouseDown,
+      onMouseEnter: handleMouseEnter,
     }),
     [
       flattenedList,
@@ -399,6 +471,8 @@ export function SongList() {
       handleSongClick,
       handleSongDoubleClick,
       handleSongContextMenu,
+      handleMouseDown,
+      handleMouseEnter,
     ]
   );
 
@@ -525,7 +599,7 @@ export function SongList() {
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[160px] bg-popover border border-border rounded-md shadow-lg py-1"
+          className="fixed z-50 min-w-[160px] bg-background border border-border rounded-md shadow-xl py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
@@ -568,6 +642,15 @@ export function SongList() {
             setShowMetadataEditor(false);
             setEditingSong(null);
           }}
+          onSave={async (updatedSong) => {
+            // Update local state
+            setSongs(
+              songs.map((s) => (s.id === updatedSong.id ? updatedSong : s))
+            );
+            await queryClient.invalidateQueries({ queryKey: ["songs"] });
+            setShowMetadataEditor(false);
+            setEditingSong(null);
+          }}
         />
       )}
     </div>
@@ -578,33 +661,58 @@ export function SongList() {
 interface MetadataEditorProps {
   song: Song;
   onClose: () => void;
+  onSave: (song: Song) => Promise<void>;
 }
 
-function MetadataEditor({ song, onClose }: MetadataEditorProps) {
+function MetadataEditor({ song, onClose, onSave }: MetadataEditorProps) {
   const { t } = useTranslation();
+  const [saving, setSaving] = useState(false);
 
-  const fields = [
-    { label: t("metadata.title", "Title"), value: song.title },
-    { label: t("metadata.artist", "Artist"), value: song.artist || "-" },
-    { label: t("metadata.album", "Album"), value: song.album || "-" },
-    {
-      label: t("metadata.albumArtist", "Album Artist"),
-      value: song.albumArtist || "-",
-    },
-    {
-      label: t("metadata.trackNumber", "Track"),
-      value: song.trackNumber
-        ? `${song.trackNumber}${song.trackTotal ? ` / ${song.trackTotal}` : ""}`
-        : "-",
-    },
-    {
-      label: t("metadata.discNumber", "Disc"),
-      value: song.discNumber
-        ? `${song.discNumber}${song.discTotal ? ` / ${song.discTotal}` : ""}`
-        : "-",
-    },
-    { label: t("metadata.year", "Year"), value: song.year || "-" },
-    { label: t("metadata.genre", "Genre"), value: song.genre || "-" },
+  // Editable fields
+  const [title, setTitle] = useState(song.title);
+  const [artist, setArtist] = useState(song.artist || "");
+  const [album, setAlbum] = useState(song.album || "");
+  const [albumArtist, setAlbumArtist] = useState(song.albumArtist || "");
+  const [trackNumber, setTrackNumber] = useState(
+    song.trackNumber?.toString() || ""
+  );
+  const [trackTotal, setTrackTotal] = useState(
+    song.trackTotal?.toString() || ""
+  );
+  const [discNumber, setDiscNumber] = useState(
+    song.discNumber?.toString() || ""
+  );
+  const [discTotal, setDiscTotal] = useState(song.discTotal?.toString() || "");
+  const [year, setYear] = useState(song.year?.toString() || "");
+  const [genre, setGenre] = useState(song.genre || "");
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const metadata = {
+        title: title || undefined,
+        artist: artist || undefined,
+        album: album || undefined,
+        albumArtist: albumArtist || undefined,
+        trackNumber: trackNumber ? parseInt(trackNumber, 10) : undefined,
+        trackTotal: trackTotal ? parseInt(trackTotal, 10) : undefined,
+        discNumber: discNumber ? parseInt(discNumber, 10) : undefined,
+        discTotal: discTotal ? parseInt(discTotal, 10) : undefined,
+        year: year ? parseInt(year, 10) : undefined,
+        genre: genre || undefined,
+      };
+
+      const updatedSong = await updateSongMetadata(song.id, metadata);
+      await onSave(updatedSong);
+    } catch (error) {
+      console.error("Failed to save metadata:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Read-only fields
+  const readOnlyFields = [
     {
       label: t("metadata.duration", "Duration"),
       value: formatDuration(song.durationMs),
@@ -646,7 +754,7 @@ function MetadataEditor({ song, onClose }: MetadataEditorProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 className="text-lg font-semibold">
-            {t("metadata.title", "Song Metadata")}
+            {t("metadata.editTitle", "Edit Metadata")}
           </h2>
           <button
             onClick={onClose}
@@ -673,22 +781,161 @@ function MetadataEditor({ song, onClose }: MetadataEditorProps) {
             </div>
           </div>
 
-          {/* Metadata Fields */}
-          <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-2">
-            {fields.map(({ label, value, mono }) => (
-              <div key={label} className={mono ? "col-span-2" : ""}>
-                <label className="text-xs text-muted-foreground">{label}</label>
-                <p
-                  className={cn(
-                    "text-sm truncate",
-                    mono && "font-mono text-xs"
-                  )}
-                  title={String(value)}
-                >
-                  {value}
-                </p>
+          {/* Editable Metadata Fields */}
+          <div className="flex-1 space-y-3">
+            {/* Title */}
+            <div>
+              <label className="text-xs text-muted-foreground">
+                {t("metadata.title", "Title")}
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            {/* Artist */}
+            <div>
+              <label className="text-xs text-muted-foreground">
+                {t("metadata.artist", "Artist")}
+              </label>
+              <input
+                type="text"
+                value={artist}
+                onChange={(e) => setArtist(e.target.value)}
+                className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            {/* Album */}
+            <div>
+              <label className="text-xs text-muted-foreground">
+                {t("metadata.album", "Album")}
+              </label>
+              <input
+                type="text"
+                value={album}
+                onChange={(e) => setAlbum(e.target.value)}
+                className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            {/* Album Artist */}
+            <div>
+              <label className="text-xs text-muted-foreground">
+                {t("metadata.albumArtist", "Album Artist")}
+              </label>
+              <input
+                type="text"
+                value={albumArtist}
+                onChange={(e) => setAlbumArtist(e.target.value)}
+                className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            {/* Track / Disc Numbers */}
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  {t("metadata.track", "Track")}
+                </label>
+                <input
+                  type="number"
+                  value={trackNumber}
+                  onChange={(e) => setTrackNumber(e.target.value)}
+                  className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+                  min="1"
+                />
               </div>
-            ))}
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  {t("metadata.of", "of")}
+                </label>
+                <input
+                  type="number"
+                  value={trackTotal}
+                  onChange={(e) => setTrackTotal(e.target.value)}
+                  className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+                  min="1"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  {t("metadata.disc", "Disc")}
+                </label>
+                <input
+                  type="number"
+                  value={discNumber}
+                  onChange={(e) => setDiscNumber(e.target.value)}
+                  className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+                  min="1"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  {t("metadata.of", "of")}
+                </label>
+                <input
+                  type="number"
+                  value={discTotal}
+                  onChange={(e) => setDiscTotal(e.target.value)}
+                  className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+                  min="1"
+                />
+              </div>
+            </div>
+
+            {/* Year & Genre */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  {t("metadata.year", "Year")}
+                </label>
+                <input
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+                  min="1900"
+                  max="2099"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  {t("metadata.genre", "Genre")}
+                </label>
+                <input
+                  type="text"
+                  value={genre}
+                  onChange={(e) => setGenre(e.target.value)}
+                  className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="border-t border-border my-2 pt-2">
+              <h3 className="text-xs font-medium text-muted-foreground mb-2">
+                {t("metadata.fileInfo", "File Information")}
+              </h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                {readOnlyFields.map(({ label, value, mono }) => (
+                  <div key={label} className={mono ? "col-span-2" : ""}>
+                    <span className="text-xs text-muted-foreground">
+                      {label}:{" "}
+                    </span>
+                    <span
+                      className={cn("text-xs", mono && "font-mono")}
+                      title={String(value)}
+                    >
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -698,7 +945,19 @@ function MetadataEditor({ song, onClose }: MetadataEditorProps) {
             onClick={onClose}
             className="px-4 py-2 text-sm rounded-md border border-border hover:bg-accent transition-colors"
           >
-            {t("common.close", "Close")}
+            {t("common.cancel", "Cancel")}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {t("common.save", "Save")}
           </button>
         </div>
       </div>

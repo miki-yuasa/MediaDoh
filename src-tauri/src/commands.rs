@@ -135,6 +135,153 @@ pub async fn delete_songs(song_ids: Vec<String>, state: State<'_, AppState>) -> 
     Ok(deleted_count)
 }
 
+/// Metadata update payload
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SongMetadataUpdate {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub track_number: Option<u32>,
+    pub track_total: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub disc_total: Option<u32>,
+    pub year: Option<i32>,
+    pub genre: Option<String>,
+}
+
+/// Update song metadata in the database
+#[tauri::command]
+pub async fn update_song_metadata(
+    song_id: String,
+    metadata: SongMetadataUpdate,
+    state: State<'_, AppState>,
+) -> Result<Song> {
+    // Build dynamic UPDATE query
+    let mut updates = Vec::new();
+    let mut values: Vec<Box<dyn std::any::Any + Send>> = Vec::new();
+    let mut param_idx = 1;
+
+    if let Some(ref title) = metadata.title {
+        updates.push(format!("title = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(title.clone()));
+    }
+    if let Some(ref artist) = metadata.artist {
+        updates.push(format!("artist = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(artist.clone()));
+    }
+    if let Some(ref album) = metadata.album {
+        updates.push(format!("album = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(album.clone()));
+    }
+    if let Some(ref album_artist) = metadata.album_artist {
+        updates.push(format!("album_artist = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(album_artist.clone()));
+    }
+    if let Some(track_number) = metadata.track_number {
+        updates.push(format!("track_number = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(track_number as i32));
+    }
+    if let Some(track_total) = metadata.track_total {
+        updates.push(format!("track_total = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(track_total as i32));
+    }
+    if let Some(disc_number) = metadata.disc_number {
+        updates.push(format!("disc_number = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(disc_number as i32));
+    }
+    if let Some(disc_total) = metadata.disc_total {
+        updates.push(format!("disc_total = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(disc_total as i32));
+    }
+    if let Some(year) = metadata.year {
+        updates.push(format!("year = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(year));
+    }
+    if let Some(ref genre) = metadata.genre {
+        updates.push(format!("genre = ${}", param_idx));
+        param_idx += 1;
+        values.push(Box::new(genre.clone()));
+    }
+
+    if updates.is_empty() {
+        // No updates, just return the existing song
+        let songs = get_all_songs(&state.db).await?;
+        return songs.into_iter().find(|s| s.id == song_id).ok_or_else(|| {
+            crate::error::MediaDohError::FileNotFound(format!("Song not found: {}", song_id))
+        });
+    }
+
+    // Update date_modified
+    updates.push(format!("date_modified = ${}", param_idx));
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Build search text
+    let search_text = format!(
+        "{} {} {} {}",
+        metadata.title.as_deref().unwrap_or(""),
+        metadata.artist.as_deref().unwrap_or(""),
+        metadata.album.as_deref().unwrap_or(""),
+        metadata.album_artist.as_deref().unwrap_or("")
+    );
+
+    // Execute update using a simpler approach
+    let query = format!(
+        "UPDATE songs SET {} WHERE id = ${}",
+        updates.join(", "),
+        param_idx + 1
+    );
+
+    // Use a simpler approach - direct SQL with optional fields
+    sqlx::query(
+        "UPDATE songs SET 
+            title = COALESCE($1, title),
+            artist = COALESCE($2, artist),
+            album = COALESCE($3, album),
+            album_artist = COALESCE($4, album_artist),
+            track_number = COALESCE($5, track_number),
+            track_total = COALESCE($6, track_total),
+            disc_number = COALESCE($7, disc_number),
+            disc_total = COALESCE($8, disc_total),
+            year = COALESCE($9, year),
+            genre = COALESCE($10, genre),
+            date_modified = $11
+        WHERE id = $12",
+    )
+    .bind(&metadata.title)
+    .bind(&metadata.artist)
+    .bind(&metadata.album)
+    .bind(&metadata.album_artist)
+    .bind(metadata.track_number.map(|n| n as i32))
+    .bind(metadata.track_total.map(|n| n as i32))
+    .bind(metadata.disc_number.map(|n| n as i32))
+    .bind(metadata.disc_total.map(|n| n as i32))
+    .bind(metadata.year)
+    .bind(&metadata.genre)
+    .bind(&now)
+    .bind(&song_id)
+    .execute(&state.db)
+    .await?;
+
+    log::info!("Updated metadata for song: {}", song_id);
+
+    // Return updated song
+    let songs = get_all_songs(&state.db).await?;
+    songs.into_iter().find(|s| s.id == song_id).ok_or_else(|| {
+        crate::error::MediaDohError::FileNotFound(format!("Song not found: {}", song_id))
+    })
+}
+
 /// Search songs by query
 #[tauri::command]
 pub async fn search_songs(query: String, state: State<'_, AppState>) -> Result<Vec<Song>> {

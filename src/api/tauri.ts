@@ -64,6 +64,32 @@ export async function deleteSongs(songIds: string[]): Promise<number> {
   return invoke<number>("delete_songs", { songIds });
 }
 
+/**
+ * Metadata update payload
+ */
+export interface SongMetadataUpdate {
+  title?: string;
+  artist?: string;
+  album?: string;
+  albumArtist?: string;
+  trackNumber?: number;
+  trackTotal?: number;
+  discNumber?: number;
+  discTotal?: number;
+  year?: number;
+  genre?: string;
+}
+
+/**
+ * Update song metadata in the database
+ */
+export async function updateSongMetadata(
+  songId: string,
+  metadata: SongMetadataUpdate
+): Promise<Song> {
+  return invoke<Song>("update_song_metadata", { songId, metadata });
+}
+
 // ============================================================================
 // Library Folder API
 // ============================================================================
