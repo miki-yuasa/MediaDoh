@@ -545,10 +545,27 @@ pub fn get_cloud_file_status(path: &Path) -> CloudFileStatus {
 
 /// Convert a local OneDrive path to relative OneDrive path
 /// e.g., "/Users/miki/OneDrive/Music/song.mp3" -> "Music/song.mp3"
+/// e.g., "/Users/miki/Library/CloudStorage/OneDrive-UniversityofIllinois-Urbana/Music/song.mp3" -> "Music/song.mp3"
 pub fn local_path_to_onedrive_path(local_path: &Path) -> Option<String> {
     let path_str = local_path.to_string_lossy();
 
-    // Common OneDrive folder patterns
+    // macOS CloudStorage format: /Library/CloudStorage/OneDrive-AccountName/...
+    // This is the most common format on modern macOS
+    if path_str.contains("/Library/CloudStorage/OneDrive") {
+        // Find "OneDrive" and then find the slash after the account name
+        if let Some(onedrive_idx) = path_str.find("/OneDrive") {
+            let after_onedrive = &path_str[onedrive_idx + 1..]; // Skip the leading /
+            // Find the first slash after "OneDrive-AccountName"
+            if let Some(slash_idx) = after_onedrive.find('/') {
+                let remaining = &after_onedrive[slash_idx + 1..];
+                if !remaining.is_empty() {
+                    return Some(remaining.to_string());
+                }
+            }
+        }
+    }
+
+    // Traditional OneDrive folder patterns
     let patterns = [
         "/OneDrive/",
         "/OneDrive - ",  // Business accounts: "OneDrive - Company Name"
@@ -602,8 +619,25 @@ mod tests {
 
     #[test]
     fn test_local_to_onedrive_path() {
+        // Traditional OneDrive path
         let path = Path::new("/Users/miki/OneDrive/Music/Artist/Album/song.mp3");
         let result = local_path_to_onedrive_path(path);
         assert_eq!(result, Some("Music/Artist/Album/song.mp3".to_string()));
+    }
+
+    #[test]
+    fn test_local_to_onedrive_path_cloudstorage() {
+        // macOS CloudStorage path (business/edu accounts)
+        let path = Path::new("/Users/miki/Library/CloudStorage/OneDrive-UniversityofIllinois-Urbana/Music/Music/EPO/song.mp3");
+        let result = local_path_to_onedrive_path(path);
+        assert_eq!(result, Some("Music/Music/EPO/song.mp3".to_string()));
+    }
+
+    #[test]
+    fn test_local_to_onedrive_path_personal() {
+        // macOS CloudStorage path (personal account)
+        let path = Path::new("/Users/miki/Library/CloudStorage/OneDrive-Personal/Music/song.mp3");
+        let result = local_path_to_onedrive_path(path);
+        assert_eq!(result, Some("Music/song.mp3".to_string()));
     }
 }
