@@ -10,6 +10,7 @@ import {
   Loader2,
   Copy,
   Check,
+  Settings,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,8 @@ import {
   startOneDriveAuth,
   pollOneDriveAuth,
   disconnectOneDrive,
+  getOneDriveClientId,
+  setOneDriveClientId,
   type DeviceCodeResponse,
 } from "@/api/tauri";
 
@@ -31,10 +34,14 @@ export function SettingsPanel() {
   const [deviceCode, setDeviceCode] = useState<DeviceCodeResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [clientId, setClientId] = useState("");
+  const [clientIdSaved, setClientIdSaved] = useState(false);
+  const [showClientIdSetup, setShowClientIdSetup] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     checkOneDriveStatus();
+    loadClientId();
     return () => {
       // Cleanup polling on unmount
       if (pollIntervalRef.current) {
@@ -42,6 +49,29 @@ export function SettingsPanel() {
       }
     };
   }, []);
+
+  const loadClientId = async () => {
+    try {
+      const id = await getOneDriveClientId();
+      if (id && id !== "your-client-id-here") {
+        setClientId(id);
+      }
+    } catch (err) {
+      console.error("Failed to load client ID:", err);
+    }
+  };
+
+  const handleSaveClientId = async () => {
+    if (!clientId.trim()) return;
+    try {
+      await setOneDriveClientId(clientId.trim());
+      setClientIdSaved(true);
+      setShowClientIdSetup(false);
+      setTimeout(() => setClientIdSaved(false), 2000);
+    } catch (err) {
+      console.error("Failed to save client ID:", err);
+    }
+  };
 
   const checkOneDriveStatus = async () => {
     try {
@@ -331,31 +361,94 @@ export function SettingsPanel() {
                   </button>
                 </div>
               ) : (
-                // Not connected - show connect button
+                // Not connected - show connect button or setup
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <CloudOff className="w-5 h-5" />
-                      <span className="text-sm">
-                        {t("settings.notConnected", "Not connected")}
-                      </span>
+                  {showClientIdSetup ? (
+                    // Client ID setup form
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium">Azure App Client ID</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={clientId}
+                            onChange={(e) => setClientId(e.target.value)}
+                            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                            className="flex-1 px-3 py-1.5 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                          />
+                          <button
+                            onClick={handleSaveClientId}
+                            disabled={!clientId.trim()}
+                            className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            {clientIdSaved ? <Check className="w-4 h-4" /> : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        To get a Client ID:{" "}
+                        <button
+                          onClick={() => open("https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade")}
+                          className="text-primary hover:underline"
+                        >
+                          Register an app on Azure
+                        </button>
+                        {" → "}Enable "Allow public client flows" → Copy Application (client) ID
+                      </p>
+                      <button
+                        onClick={() => setShowClientIdSetup(false)}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
                     </div>
-                    <button
-                      onClick={handleConnectOneDrive}
-                      disabled={oneDriveLoading}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                    >
-                      {oneDriveLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Cloud className="w-4 h-4" />
-                      )}
-                      {t("settings.connect", "Connect")}
-                    </button>
-                  </div>
+                  ) : (
+                    // Normal connect UI
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <CloudOff className="w-5 h-5" />
+                          <span className="text-sm">
+                            {t("settings.notConnected", "Not connected")}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setShowClientIdSetup(true)}
+                            className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-accent transition-colors"
+                            title="Configure Client ID"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={handleConnectOneDrive}
+                            disabled={oneDriveLoading}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            {oneDriveLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Cloud className="w-4 h-4" />
+                            )}
+                            {t("settings.connect", "Connect")}
+                          </button>
+                        </div>
+                      </div>
 
-                  {authError && (
-                    <p className="text-xs text-destructive">{authError}</p>
+                      {authError && (
+                        <div className="space-y-2">
+                          <p className="text-xs text-destructive">{authError}</p>
+                          {authError.includes("Client ID") && (
+                            <button
+                              onClick={() => setShowClientIdSetup(true)}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              Configure Client ID →
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}

@@ -314,3 +314,17 @@ export async function isOneDriveAuthenticated(): Promise<boolean> {
 export async function disconnectOneDrive(): Promise<void> {
   return invoke("onedrive_disconnect");
 }
+
+/**
+ * Set OneDrive client ID
+ */
+export async function setOneDriveClientId(clientId: string): Promise<void> {
+  return invoke("onedrive_set_client_id", { clientId });
+}
+
+/**
+ * Get OneDrive client ID
+ */
+export async function getOneDriveClientId(): Promise<string> {
+  return invoke<string>("onedrive_get_client_id");
+}

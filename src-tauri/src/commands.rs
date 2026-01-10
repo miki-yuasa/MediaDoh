@@ -471,3 +471,44 @@ pub async fn onedrive_disconnect(state: State<'_, AppState>) -> Result<()> {
 
     Ok(())
 }
+
+/// Set OneDrive client ID
+#[tauri::command]
+pub async fn onedrive_set_client_id(client_id: String, state: State<'_, AppState>) -> Result<()> {
+    // Save to database for persistence
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('onedrive_client_id', ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?",
+    )
+    .bind(&client_id)
+    .bind(&now)
+    .bind(&client_id)
+    .bind(&now)
+    .execute(&state.db)
+    .await?;
+
+    // Update in-memory client
+    state.onedrive.set_client_id(client_id).await;
+
+    Ok(())
+}
+
+/// Get OneDrive client ID
+#[tauri::command]
+pub async fn onedrive_get_client_id(state: State<'_, AppState>) -> Result<String> {
+    // Try to load from database first
+    let result = sqlx::query_scalar::<_, String>(
+        "SELECT value FROM settings WHERE key = 'onedrive_client_id'",
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
+    if let Some(client_id) = result {
+        // Update in-memory client if different
+        state.onedrive.set_client_id(client_id.clone()).await;
+        Ok(client_id)
+    } else {
+        Ok(state.onedrive.get_client_id().await)
+    }
+}

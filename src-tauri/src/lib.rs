@@ -46,8 +46,19 @@ pub fn run() {
             // Initialize audio player
             let player = AudioPlayer::new().expect("Failed to initialize audio player");
 
-            // Initialize OneDrive client (user can configure client_id in settings)
-            let onedrive_client = Arc::new(OneDriveClient::new(None));
+            // Load OneDrive client ID from database if available
+            let onedrive_client_id = tauri::async_runtime::block_on(async {
+                sqlx::query_scalar::<_, String>(
+                    "SELECT value FROM settings WHERE key = 'onedrive_client_id'",
+                )
+                .fetch_optional(&db)
+                .await
+                .ok()
+                .flatten()
+            });
+
+            // Initialize OneDrive client
+            let onedrive_client = Arc::new(OneDriveClient::new(onedrive_client_id));
 
             // Create app state
             let state = AppState {
@@ -97,6 +108,8 @@ pub fn run() {
             commands::onedrive_poll_auth,
             commands::onedrive_is_authenticated,
             commands::onedrive_disconnect,
+            commands::onedrive_set_client_id,
+            commands::onedrive_get_client_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

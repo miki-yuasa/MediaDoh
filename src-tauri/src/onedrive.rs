@@ -117,7 +117,7 @@ pub struct GraphParentReference {
 pub struct OneDriveClient {
     http_client: Client,
     tokens: Arc<RwLock<Option<OneDriveTokens>>>,
-    client_id: String,
+    client_id: Arc<RwLock<String>>,
 }
 
 impl OneDriveClient {
@@ -126,8 +126,19 @@ impl OneDriveClient {
         Self {
             http_client: Client::new(),
             tokens: Arc::new(RwLock::new(None)),
-            client_id: client_id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()),
+            client_id: Arc::new(RwLock::new(client_id.unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()))),
         }
+    }
+
+    /// Set the client ID
+    pub async fn set_client_id(&self, client_id: String) {
+        let mut id = self.client_id.write().await;
+        *id = client_id;
+    }
+
+    /// Get the current client ID
+    pub async fn get_client_id(&self) -> String {
+        self.client_id.read().await.clone()
     }
 
     /// Check if the client is authenticated
@@ -161,17 +172,19 @@ impl OneDriveClient {
     /// Start Device Code Flow - returns info for user to authenticate
     /// User goes to verification_uri and enters user_code
     pub async fn start_device_code_flow(&self) -> Result<DeviceCodeResponse> {
+        let client_id = self.client_id.read().await;
+        
         // Check if client ID is configured
-        if self.client_id == "your-client-id-here" || self.client_id.is_empty() {
+        if *client_id == "your-client-id-here" || client_id.is_empty() {
             return Err(MediaDohError::Network(
-                "OneDrive client ID not configured. Please set up an Azure app and configure the client ID in settings.".to_string()
+                "OneDrive client ID not configured. Please enter your Azure App Client ID in Settings.".to_string()
             ));
         }
 
         let scopes = "Files.Read Files.Read.All offline_access";
         
         let params = [
-            ("client_id", self.client_id.as_str()),
+            ("client_id", client_id.as_str()),
             ("scope", scopes),
         ];
 
@@ -202,8 +215,9 @@ impl OneDriveClient {
     /// Poll for tokens after user has authenticated via device code
     /// Returns Ok(Some(tokens)) when authenticated, Ok(None) if still pending
     pub async fn poll_device_code(&self, device_code: &str) -> Result<Option<OneDriveTokens>> {
+        let client_id = self.client_id.read().await;
         let params = [
-            ("client_id", self.client_id.as_str()),
+            ("client_id", client_id.as_str()),
             ("device_code", device_code),
             ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
         ];
@@ -269,8 +283,9 @@ impl OneDriveClient {
             .and_then(|t| t.refresh_token)
             .ok_or_else(|| MediaDohError::Network("No refresh token available".to_string()))?;
 
+        let client_id = self.client_id.read().await;
         let params = [
-            ("client_id", self.client_id.as_str()),
+            ("client_id", client_id.as_str()),
             ("refresh_token", refresh_token.as_str()),
             ("grant_type", "refresh_token"),
         ];
