@@ -2,7 +2,14 @@ import { useCallback, useMemo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { List, RowComponentProps } from "react-window";
 import { AutoSizer } from "react-virtualized-auto-sizer";
-import { Check, AlertCircle, Music, Trash2, AlertTriangle, Loader2 } from "lucide-react";
+import {
+  Check,
+  AlertCircle,
+  Music,
+  Trash2,
+  AlertTriangle,
+  Loader2,
+} from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

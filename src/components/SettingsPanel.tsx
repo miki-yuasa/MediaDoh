@@ -192,7 +192,10 @@ export function SettingsPanel() {
       clearSelection();
       // Also invalidate the query cache so it stays in sync
       await queryClient.invalidateQueries({ queryKey: ["songs"] });
-      setClearResult(t("settings.libraryCleared", { count }) || `Cleared ${count} songs from library index`);
+      setClearResult(
+        t("settings.libraryCleared", { count }) ||
+          `Cleared ${count} songs from library index`
+      );
       setShowClearConfirm(false);
       setTimeout(() => setClearResult(null), 5000);
     } catch (err) {
@@ -312,7 +315,10 @@ export function SettingsPanel() {
                   <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
                     <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <p className="text-sm">
-                      {t("settings.clearLibraryWarning", "This will remove all songs from the library index. Your music files will NOT be deleted. You will need to rescan your folders to rebuild the library.")}
+                      {t(
+                        "settings.clearLibraryWarning",
+                        "This will remove all songs from the library index. Your music files will NOT be deleted. You will need to rescan your folders to rebuild the library."
+                      )}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -340,7 +346,10 @@ export function SettingsPanel() {
               ) : (
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
-                    {t("settings.clearLibraryDescription", "Clear the library index to rescan from scratch")}
+                    {t(
+                      "settings.clearLibraryDescription",
+                      "Clear the library index to rescan from scratch"
+                    )}
                   </p>
                   <button
                     onClick={() => setShowClearConfirm(true)}
@@ -352,7 +361,9 @@ export function SettingsPanel() {
                 </div>
               )}
               {clearResult && (
-                <p className="text-sm text-green-600 dark:text-green-400">{clearResult}</p>
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  {clearResult}
+                </p>
               )}
             </div>
           </div>
