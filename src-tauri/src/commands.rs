@@ -4,17 +4,19 @@ use crate::database::DbPool;
 use crate::devices::detect_devices;
 use crate::error::Result;
 use crate::models::{Device, RepeatMode, Song, ThemePreference, ViewMode};
+use crate::onedrive::{OneDriveClient, OneDriveTokens};
 use crate::player::{AudioPlayer, PlayerState};
-use crate::scanner::{get_all_songs, scan_directory};
+use crate::scanner::{get_all_songs, scan_directory_with_options, ScanOptions};
 use crate::sync::{compare_with_device, sync_to_device, SyncComparison, SyncResult};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
 /// Application state managed by Tauri
 pub struct AppState {
     pub db: DbPool,
     pub player: Mutex<AudioPlayer>,
+    pub onedrive: Arc<OneDriveClient>,
 }
 
 /// Library folder info
@@ -37,6 +39,7 @@ pub struct LibraryFolder {
 #[tauri::command]
 pub async fn scan_library(
     path: String,
+    skip_cloud_only: Option<bool>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Vec<Song>> {
@@ -45,7 +48,19 @@ pub async fn scan_library(
     // Emit scan started event
     let _ = app.emit("scan-started", &path.to_string_lossy().to_string());
 
-    let songs = scan_directory(&path, &state.db, Some(&app)).await?;
+    let options = ScanOptions {
+        skip_cloud_only: skip_cloud_only.unwrap_or(false),
+        use_onedrive_api: true,
+    };
+
+    let songs = scan_directory_with_options(
+        &path,
+        &state.db,
+        Some(&app),
+        options,
+        Some(state.onedrive.clone()),
+    )
+    .await?;
 
     // Emit scan completed event
     let _ = app.emit("scan-completed", songs.len());
@@ -343,10 +358,20 @@ pub async fn scan_all_libraries(state: State<'_, AppState>, app: AppHandle) -> R
     let folders = get_library_folders(state.clone()).await?;
     let mut all_songs = Vec::new();
 
+    let options = ScanOptions::default();
+
     for folder in folders {
         if folder.is_enabled {
             let path = PathBuf::from(&folder.path);
-            match scan_directory(&path, &state.db, Some(&app)).await {
+            match scan_directory_with_options(
+                &path,
+                &state.db,
+                Some(&app),
+                options.clone(),
+                Some(state.onedrive.clone()),
+            )
+            .await
+            {
                 Ok(songs) => {
                     // Update folder file count
                     let count = songs.len() as i32;
@@ -370,4 +395,72 @@ pub async fn scan_all_libraries(state: State<'_, AppState>, app: AppHandle) -> R
     }
 
     Ok(all_songs)
+}
+
+// ============================================================================
+// OneDrive Commands
+// ============================================================================
+
+/// Get OneDrive authentication URL
+#[tauri::command]
+pub async fn onedrive_get_auth_url(state: State<'_, AppState>) -> Result<String> {
+    Ok(state.onedrive.get_auth_url())
+}
+
+/// Exchange authorization code for tokens
+#[tauri::command]
+pub async fn onedrive_exchange_code(code: String, state: State<'_, AppState>) -> Result<()> {
+    let tokens = state.onedrive.exchange_code(&code).await?;
+    
+    // Save tokens to database for persistence
+    let tokens_json = serde_json::to_string(&tokens)?;
+    
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('onedrive_tokens', ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
+    )
+    .bind(&tokens_json)
+    .bind(&now)
+    .bind(&tokens_json)
+    .bind(&now)
+    .execute(&state.db)
+    .await?;
+    
+    Ok(())
+}
+
+/// Check if OneDrive is authenticated
+#[tauri::command]
+pub async fn onedrive_is_authenticated(state: State<'_, AppState>) -> Result<bool> {
+    // Try to load tokens from database if not in memory
+    if !state.onedrive.is_authenticated().await {
+        let result = sqlx::query_scalar::<_, String>(
+            "SELECT value FROM settings WHERE key = 'onedrive_tokens'"
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        
+        if let Some(tokens_json) = result {
+            if let Ok(tokens) = serde_json::from_str::<OneDriveTokens>(&tokens_json) {
+                state.onedrive.set_tokens(tokens).await;
+            }
+        }
+    }
+    
+    Ok(state.onedrive.is_authenticated().await)
+}
+
+/// Disconnect OneDrive
+#[tauri::command]
+pub async fn onedrive_disconnect(state: State<'_, AppState>) -> Result<()> {
+    // Clear tokens from database
+    sqlx::query("DELETE FROM settings WHERE key = 'onedrive_tokens'")
+        .execute(&state.db)
+        .await?;
+    
+    // Note: Can't easily clear in-memory tokens without interior mutability
+    // The client will check is_authenticated() which checks expiry
+    
+    Ok(())
 }

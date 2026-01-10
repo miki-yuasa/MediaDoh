@@ -28,6 +28,9 @@ pub enum MediaDohError {
     #[error("Sync error: {0}")]
     Sync(String),
 
+    #[error("Network error: {0}")]
+    Network(String),
+
     #[error("Configuration error: {0}")]
     Config(String),
 

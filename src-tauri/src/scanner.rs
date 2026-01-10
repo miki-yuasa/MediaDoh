@@ -3,6 +3,10 @@
 use crate::database::DbPool;
 use crate::error::{MediaDohError, Result};
 use crate::models::{AudioFormat, Song, SyncStatus};
+use crate::onedrive::{
+    get_cloud_file_status, graph_metadata_to_audio, local_path_to_onedrive_path, CloudFileStatus,
+    OneDriveClient,
+};
 use chrono::Utc;
 use lofty::prelude::*;
 use lofty::probe::Probe;
@@ -10,8 +14,28 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use uuid::Uuid;
 use walkdir::WalkDir;
+
+/// Scan options
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanOptions {
+    /// Skip cloud-only files entirely
+    pub skip_cloud_only: bool,
+    /// Use OneDrive API for cloud-only files (requires authentication)
+    pub use_onedrive_api: bool,
+}
+
+impl Default for ScanOptions {
+    fn default() -> Self {
+        Self {
+            skip_cloud_only: false,
+            use_onedrive_api: true,
+        }
+    }
+}
 
 /// Get the artwork cache directory
 fn get_artwork_cache_dir() -> Result<PathBuf> {
@@ -78,6 +102,7 @@ fn is_audio_file(path: &Path) -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct ScanProgress {
     pub scanned: usize,
+    pub skipped_cloud: usize,
     pub current_file: String,
 }
 
@@ -87,6 +112,17 @@ pub async fn scan_directory(
     pool: &DbPool,
     app: Option<&tauri::AppHandle>,
 ) -> Result<Vec<Song>> {
+    scan_directory_with_options(path, pool, app, ScanOptions::default(), None).await
+}
+
+/// Scan a directory with custom options and optional OneDrive client
+pub async fn scan_directory_with_options(
+    path: &PathBuf,
+    pool: &DbPool,
+    app: Option<&tauri::AppHandle>,
+    options: ScanOptions,
+    onedrive_client: Option<Arc<OneDriveClient>>,
+) -> Result<Vec<Song>> {
     use tauri::Emitter;
 
     let path = dunce::canonicalize(path)
@@ -95,6 +131,8 @@ pub async fn scan_directory(
     log::info!("Scanning directory: {}", path.display());
 
     let mut songs = Vec::new();
+    let mut skipped_cloud = 0usize;
+    
     let walker = WalkDir::new(&path)
         .follow_links(true)
         .into_iter()
@@ -103,7 +141,61 @@ pub async fn scan_directory(
     for entry in walker {
         let file_path = entry.path();
         if file_path.is_file() && is_audio_file(file_path) {
-            match parse_audio_file(file_path).await {
+            // Check if file is cloud-only
+            let cloud_status = get_cloud_file_status(file_path);
+            
+            let song_result = match cloud_status {
+                CloudFileStatus::CloudOnly => {
+                    if options.skip_cloud_only {
+                        log::debug!("Skipping cloud-only file: {}", file_path.display());
+                        skipped_cloud += 1;
+                        continue;
+                    }
+                    
+                    if options.use_onedrive_api {
+                        // Try to get metadata from OneDrive API
+                        if let Some(ref client) = onedrive_client {
+                            if client.is_authenticated().await {
+                                match parse_cloud_file(file_path, client.clone()).await {
+                                    Ok(song) => Ok(song),
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Failed to get OneDrive metadata for {}: {}",
+                                            file_path.display(),
+                                            e
+                                        );
+                                        skipped_cloud += 1;
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                log::debug!(
+                                    "OneDrive not authenticated, skipping: {}",
+                                    file_path.display()
+                                );
+                                skipped_cloud += 1;
+                                continue;
+                            }
+                        } else {
+                            log::debug!(
+                                "No OneDrive client, skipping cloud file: {}",
+                                file_path.display()
+                            );
+                            skipped_cloud += 1;
+                            continue;
+                        }
+                    } else {
+                        skipped_cloud += 1;
+                        continue;
+                    }
+                }
+                _ => {
+                    // Local file - parse normally
+                    parse_audio_file(file_path).await
+                }
+            };
+
+            match song_result {
                 Ok(song) => {
                     // Check if song already exists in database
                     let exists = check_song_exists(pool, &song.file_path).await?;
@@ -124,6 +216,7 @@ pub async fn scan_directory(
                                     "scan-progress",
                                     ScanProgress {
                                         scanned: songs.len(),
+                                        skipped_cloud,
                                         current_file: file_path.to_string_lossy().to_string(),
                                     },
                                 );
@@ -138,8 +231,77 @@ pub async fn scan_directory(
         }
     }
 
-    log::info!("Found {} new audio files", songs.len());
+    log::info!(
+        "Found {} new audio files, skipped {} cloud-only files",
+        songs.len(),
+        skipped_cloud
+    );
     Ok(songs)
+}
+
+/// Parse a cloud-only file using OneDrive API
+async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<Song> {
+    let path = dunce::canonicalize(path)?;
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    // Convert local path to OneDrive path
+    let onedrive_path = local_path_to_onedrive_path(&path).ok_or_else(|| {
+        MediaDohError::InvalidPath("Cannot determine OneDrive path".to_string())
+    })?;
+
+    // Get metadata from OneDrive API
+    let file_info = client.get_file_metadata(&onedrive_path).await?;
+    let metadata = graph_metadata_to_audio(&file_info);
+
+    // Determine format from extension
+    let format = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(AudioFormat::from_extension)
+        .unwrap_or(AudioFormat::Unknown);
+
+    let is_lossless = format.is_lossless();
+    let now = Utc::now();
+
+    Ok(Song {
+        id: Uuid::new_v4().to_string(),
+        file_path: path,
+        file_name,
+        file_size: file_info.size,
+        file_hash: None,
+        title: metadata.title.unwrap_or_else(|| "Unknown".to_string()),
+        artist: metadata.artist,
+        album_artist: metadata.album_artist,
+        album: metadata.album,
+        track_number: metadata.track,
+        track_total: metadata.track_count,
+        disc_number: metadata.disc,
+        disc_total: metadata.disc_count,
+        year: metadata.year,
+        genre: metadata.genre,
+        composer: None, // Graph API doesn't expose composer in audio facet easily
+        duration_ms: metadata.duration_ms.unwrap_or(0),
+        sample_rate: None, // Not available from Graph API
+        bit_depth: None,
+        bitrate: metadata.bitrate,
+        channels: None,
+        format,
+        is_lossless,
+        has_embedded_art: false, // Will try to get thumbnail URL separately
+        art_cache_path: None,
+        date_added: now,
+        date_modified: now,
+        last_played: None,
+        play_count: 0,
+        sync_status: SyncStatus::NotSynced,
+        synced_to_device: None,
+        synced_at: None,
+        rating: 0,
+    })
 }
 
 /// Parse audio file metadata

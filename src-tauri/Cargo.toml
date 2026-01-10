@@ -71,6 +71,16 @@ env_logger = "0.11"
 # Cross-platform path normalization
 dunce = "1"
 
+# HTTP client for OneDrive API
+reqwest = { version = "0.12", features = ["json"] }
+
+# URL handling
+url = "2"
+urlencoding = "2"
+
+# Base64 encoding for OAuth
+base64 = "0.22"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # macOS-specific audio APIs if needed
 coreaudio-rs = { version = "0.12", optional = true }

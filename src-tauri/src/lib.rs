@@ -8,15 +8,18 @@ pub mod database;
 pub mod devices;
 pub mod error;
 pub mod models;
+pub mod onedrive;
 pub mod player;
 pub mod scanner;
 pub mod sync;
 
 use commands::AppState;
 use database::{get_app_data_dir, init_database};
+use onedrive::OneDriveClient;
 use player::AudioPlayer;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
+use tokio::sync::RwLock;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,11 +45,15 @@ pub fn run() {
 
             // Initialize audio player
             let player = AudioPlayer::new().expect("Failed to initialize audio player");
+            
+            // Initialize OneDrive client (user can configure client_id in settings)
+            let onedrive_client = Arc::new(OneDriveClient::new(None));
 
             // Create app state
             let state = AppState {
                 db,
                 player: Mutex::new(player),
+                onedrive: onedrive_client,
             };
 
             app.manage(state);
@@ -85,6 +92,11 @@ pub fn run() {
             commands::set_default_library_folder,
             commands::get_default_library_folder,
             commands::scan_all_libraries,
+            // OneDrive commands
+            commands::onedrive_get_auth_url,
+            commands::onedrive_exchange_code,
+            commands::onedrive_is_authenticated,
+            commands::onedrive_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

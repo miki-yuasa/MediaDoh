@@ -271,3 +271,35 @@ export async function getViewMode(): Promise<ViewMode> {
 export async function setViewMode(mode: ViewMode): Promise<void> {
   return invoke("set_view_mode", { mode });
 }
+
+// ============================================================================
+// OneDrive API
+// ============================================================================
+
+/**
+ * Get the OAuth authorization URL for OneDrive
+ */
+export async function getOneDriveAuthUrl(): Promise<string> {
+  return invoke<string>("onedrive_get_auth_url");
+}
+
+/**
+ * Exchange authorization code for tokens
+ */
+export async function exchangeOneDriveCode(code: string): Promise<void> {
+  return invoke("onedrive_exchange_code", { code });
+}
+
+/**
+ * Check if user is authenticated with OneDrive
+ */
+export async function isOneDriveAuthenticated(): Promise<boolean> {
+  return invoke<boolean>("onedrive_is_authenticated");
+}
+
+/**
+ * Disconnect from OneDrive
+ */
+export async function disconnectOneDrive(): Promise<void> {
+  return invoke("onedrive_disconnect");
+}
