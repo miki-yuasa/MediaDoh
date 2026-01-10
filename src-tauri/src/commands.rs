@@ -36,20 +36,20 @@ pub struct LibraryFolder {
 /// Scan a directory for music files with progress events
 #[tauri::command]
 pub async fn scan_library(
-    path: String, 
+    path: String,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Vec<Song>> {
     let path = PathBuf::from(&path);
-    
+
     // Emit scan started event
     let _ = app.emit("scan-started", &path.to_string_lossy().to_string());
-    
+
     let songs = scan_directory(&path, &state.db, Some(&app)).await?;
-    
+
     // Emit scan completed event
     let _ = app.emit("scan-completed", songs.len());
-    
+
     Ok(songs)
 }
 
@@ -275,24 +275,24 @@ pub async fn get_library_folders(state: State<'_, AppState>) -> Result<Vec<Libra
     .fetch_all(&state.db)
     .await?;
 
-    Ok(rows.into_iter().map(|(id, path, is_enabled, last_scan, file_count, date_added)| {
-        LibraryFolder {
-            id,
-            path,
-            is_enabled: is_enabled != 0,
-            last_scan,
-            file_count,
-            date_added,
-        }
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, path, is_enabled, last_scan, file_count, date_added)| LibraryFolder {
+                id,
+                path,
+                is_enabled: is_enabled != 0,
+                last_scan,
+                file_count,
+                date_added,
+            },
+        )
+        .collect())
 }
 
 /// Add a library folder
 #[tauri::command]
-pub async fn add_library_folder(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<LibraryFolder> {
+pub async fn add_library_folder(path: String, state: State<'_, AppState>) -> Result<LibraryFolder> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -339,10 +339,7 @@ pub async fn get_default_library_folder(state: State<'_, AppState>) -> Result<Op
 
 /// Scan all enabled library folders
 #[tauri::command]
-pub async fn scan_all_libraries(
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<Vec<Song>> {
+pub async fn scan_all_libraries(state: State<'_, AppState>, app: AppHandle) -> Result<Vec<Song>> {
     let folders = get_library_folders(state.clone()).await?;
     let mut all_songs = Vec::new();
 

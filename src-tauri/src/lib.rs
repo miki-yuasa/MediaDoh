@@ -32,8 +32,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Initialize database
-            let app_data_dir = get_app_data_dir()
-                .expect("Failed to get app data directory");
+            let app_data_dir = get_app_data_dir().expect("Failed to get app data directory");
 
             let db = tauri::async_runtime::block_on(async {
                 init_database(&app_data_dir)
@@ -42,8 +41,7 @@ pub fn run() {
             });
 
             // Initialize audio player
-            let player = AudioPlayer::new()
-                .expect("Failed to initialize audio player");
+            let player = AudioPlayer::new().expect("Failed to initialize audio player");
 
             // Create app state
             let state = AppState {
@@ -91,4 +89,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

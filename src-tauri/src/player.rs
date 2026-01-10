@@ -81,7 +81,8 @@ impl AudioPlayer {
                                             new_sink.append(source);
                                             *is_playing_clone.lock().unwrap() = true;
                                             *is_paused_clone.lock().unwrap() = false;
-                                            *playback_start_clone.lock().unwrap() = Some(Instant::now());
+                                            *playback_start_clone.lock().unwrap() =
+                                                Some(Instant::now());
                                             *pause_position_clone.lock().unwrap() = 0;
                                             sink = Some(new_sink);
                                         }
@@ -213,7 +214,7 @@ impl AudioPlayer {
     /// Get current position in milliseconds
     pub fn get_position_ms(&self) -> u64 {
         let pause_position = *self.pause_position_ms.lock().unwrap();
-        
+
         if let Some(start) = *self.playback_start_time.lock().unwrap() {
             // Currently playing - add elapsed time to pause position
             pause_position + start.elapsed().as_millis() as u64

@@ -108,28 +108,38 @@ export interface ScanProgress {
 /**
  * Listen for song added events during scanning
  */
-export function onSongAdded(callback: (song: Song) => void): Promise<UnlistenFn> {
+export function onSongAdded(
+  callback: (song: Song) => void
+): Promise<UnlistenFn> {
   return listen<Song>("song-added", (event) => callback(event.payload));
 }
 
 /**
  * Listen for scan progress events
  */
-export function onScanProgress(callback: (progress: ScanProgress) => void): Promise<UnlistenFn> {
-  return listen<ScanProgress>("scan-progress", (event) => callback(event.payload));
+export function onScanProgress(
+  callback: (progress: ScanProgress) => void
+): Promise<UnlistenFn> {
+  return listen<ScanProgress>("scan-progress", (event) =>
+    callback(event.payload)
+  );
 }
 
 /**
  * Listen for scan started events
  */
-export function onScanStarted(callback: (path: string) => void): Promise<UnlistenFn> {
+export function onScanStarted(
+  callback: (path: string) => void
+): Promise<UnlistenFn> {
   return listen<string>("scan-started", (event) => callback(event.payload));
 }
 
 /**
  * Listen for scan completed events
  */
-export function onScanCompleted(callback: (count: number) => void): Promise<UnlistenFn> {
+export function onScanCompleted(
+  callback: (count: number) => void
+): Promise<UnlistenFn> {
   return listen<number>("scan-completed", (event) => callback(event.payload));
 }
 

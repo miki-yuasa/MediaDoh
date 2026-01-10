@@ -13,7 +13,13 @@ import {
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { usePlayerStore } from "@/store";
-import { playSong, pause, resume, setVolume, getPlayerState } from "@/api/tauri";
+import {
+  playSong,
+  pause,
+  resume,
+  setVolume,
+  getPlayerState,
+} from "@/api/tauri";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 export function PlayerBar() {
@@ -37,7 +43,7 @@ export function PlayerBar() {
     previousTrack,
     setPosition,
   } = usePlayerStore();
-  
+
   const intervalRef = useRef<number | null>(null);
 
   // Poll player state for position updates

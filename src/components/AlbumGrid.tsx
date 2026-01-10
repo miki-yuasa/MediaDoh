@@ -58,8 +58,8 @@ interface AlbumCardProps {
 
 function AlbumCard({ album, onClick }: AlbumCardProps) {
   // Convert local file path to URL that Tauri can load
-  const artworkUrl = album.artCachePath 
-    ? convertFileSrc(album.artCachePath) 
+  const artworkUrl = album.artCachePath
+    ? convertFileSrc(album.artCachePath)
     : null;
 
   return (

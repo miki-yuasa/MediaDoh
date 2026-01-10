@@ -26,28 +26,36 @@ fn get_artwork_cache_dir() -> Result<PathBuf> {
 /// Extract and cache album artwork from audio file
 fn extract_and_cache_artwork(path: &Path, album_key: &str) -> Option<PathBuf> {
     let cache_dir = get_artwork_cache_dir().ok()?;
-    
+
     // Create a safe filename from album key
     let safe_name: String = album_key
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let artwork_path = cache_dir.join(format!("{}.jpg", safe_name));
-    
+
     // If artwork already cached, return path
     if artwork_path.exists() {
         return Some(artwork_path);
     }
-    
+
     // Extract artwork from file
     let tagged_file = Probe::open(path).ok()?.read().ok()?;
-    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag())?;
+    let tag = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())?;
     let picture = tag.pictures().first()?;
-    
+
     // Write to cache
     let mut file = File::create(&artwork_path).ok()?;
     file.write_all(picture.data()).ok()?;
-    
+
     log::debug!("Cached artwork: {}", artwork_path.display());
     Some(artwork_path)
 }
@@ -75,15 +83,14 @@ pub struct ScanProgress {
 
 /// Scan a directory recursively for audio files
 pub async fn scan_directory(
-    path: &PathBuf, 
-    pool: &DbPool, 
+    path: &PathBuf,
+    pool: &DbPool,
     app: Option<&tauri::AppHandle>,
 ) -> Result<Vec<Song>> {
     use tauri::Emitter;
-    
-    let path = dunce::canonicalize(path).map_err(|e| {
-        MediaDohError::InvalidPath(format!("Cannot canonicalize path: {}", e))
-    })?;
+
+    let path = dunce::canonicalize(path)
+        .map_err(|e| MediaDohError::InvalidPath(format!("Cannot canonicalize path: {}", e)))?;
 
     log::info!("Scanning directory: {}", path.display());
 
@@ -102,21 +109,24 @@ pub async fn scan_directory(
                     let exists = check_song_exists(pool, &song.file_path).await?;
                     if !exists {
                         insert_song(pool, &song).await?;
-                        
+
                         // Emit event for each new song
                         if let Some(app_handle) = app {
                             let _ = app_handle.emit("song-added", &song);
                         }
-                        
+
                         songs.push(song);
-                        
+
                         // Emit progress event every 10 songs
                         if songs.len() % 10 == 0 {
                             if let Some(app_handle) = app {
-                                let _ = app_handle.emit("scan-progress", ScanProgress {
-                                    scanned: songs.len(),
-                                    current_file: file_path.to_string_lossy().to_string(),
-                                });
+                                let _ = app_handle.emit(
+                                    "scan-progress",
+                                    ScanProgress {
+                                        scanned: songs.len(),
+                                        current_file: file_path.to_string_lossy().to_string(),
+                                    },
+                                );
                             }
                         }
                     }
@@ -151,7 +161,9 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
         .map_err(|e| MediaDohError::Metadata(e.to_string()))?;
 
     let properties = tagged_file.properties();
-    let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+    let tag = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag());
 
     // Extract metadata
     let title = tag
@@ -192,12 +204,15 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
 
     // Check for embedded album art and extract it
     let has_embedded_art = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
-    
+
     // Extract and cache artwork if available
     let art_cache_path = if has_embedded_art {
         let album_key = format!(
             "{}-{}",
-            album_artist.as_deref().or(artist.as_deref()).unwrap_or("Unknown"),
+            album_artist
+                .as_deref()
+                .or(artist.as_deref())
+                .unwrap_or("Unknown"),
             album.as_deref().unwrap_or("Unknown")
         );
         extract_and_cache_artwork(&path, &album_key)
@@ -339,7 +354,11 @@ async fn insert_song(pool: &DbPool, song: &Song) -> Result<()> {
     .bind(format)
     .bind(song.is_lossless as i32)
     .bind(song.has_embedded_art as i32)
-    .bind(song.art_cache_path.as_ref().map(|p| p.to_string_lossy().to_string()))
+    .bind(
+        song.art_cache_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
+    )
     .bind(&date_added)
     .bind(&date_modified)
     .bind::<Option<String>>(None)
