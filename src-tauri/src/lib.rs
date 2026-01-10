@@ -45,7 +45,7 @@ pub fn run() {
 
             // Initialize audio player
             let player = AudioPlayer::new().expect("Failed to initialize audio player");
-            
+
             // Initialize OneDrive client (user can configure client_id in settings)
             let onedrive_client = Arc::new(OneDriveClient::new(None));
 

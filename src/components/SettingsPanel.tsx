@@ -1,22 +1,31 @@
-import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Moon, Sun, Monitor, Globe, Cloud, CloudOff, Loader2, ExternalLink } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useUIStore } from '@/store';
-import type { ThemePreference } from '@/types';
-import { 
-  isOneDriveAuthenticated, 
-  getOneDriveAuthUrl, 
-  exchangeOneDriveCode, 
-  disconnectOneDrive 
-} from '@/api/tauri';
+import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  Moon,
+  Sun,
+  Monitor,
+  Globe,
+  Cloud,
+  CloudOff,
+  Loader2,
+  ExternalLink,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useUIStore } from "@/store";
+import type { ThemePreference } from "@/types";
+import {
+  isOneDriveAuthenticated,
+  getOneDriveAuthUrl,
+  exchangeOneDriveCode,
+  disconnectOneDrive,
+} from "@/api/tauri";
 
 export function SettingsPanel() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useUIStore();
   const [oneDriveConnected, setOneDriveConnected] = useState(false);
   const [oneDriveLoading, setOneDriveLoading] = useState(false);
-  const [authCode, setAuthCode] = useState('');
+  const [authCode, setAuthCode] = useState("");
 
   useEffect(() => {
     checkOneDriveStatus();
@@ -27,7 +36,7 @@ export function SettingsPanel() {
       const connected = await isOneDriveAuthenticated();
       setOneDriveConnected(connected);
     } catch (err) {
-      console.error('Failed to check OneDrive status:', err);
+      console.error("Failed to check OneDrive status:", err);
     }
   };
 
@@ -36,9 +45,9 @@ export function SettingsPanel() {
       setOneDriveLoading(true);
       const authUrl = await getOneDriveAuthUrl();
       // Open the auth URL in the default browser
-      window.open(authUrl, '_blank');
+      window.open(authUrl, "_blank");
     } catch (err) {
-      console.error('Failed to start OneDrive auth:', err);
+      console.error("Failed to start OneDrive auth:", err);
     } finally {
       setOneDriveLoading(false);
     }
@@ -49,10 +58,10 @@ export function SettingsPanel() {
     try {
       setOneDriveLoading(true);
       await exchangeOneDriveCode(authCode.trim());
-      setAuthCode('');
+      setAuthCode("");
       await checkOneDriveStatus();
     } catch (err) {
-      console.error('Failed to exchange code:', err);
+      console.error("Failed to exchange code:", err);
     } finally {
       setOneDriveLoading(false);
     }
@@ -64,45 +73,61 @@ export function SettingsPanel() {
       await disconnectOneDrive();
       setOneDriveConnected(false);
     } catch (err) {
-      console.error('Failed to disconnect OneDrive:', err);
+      console.error("Failed to disconnect OneDrive:", err);
     } finally {
       setOneDriveLoading(false);
     }
   };
 
-  const themes: Array<{ value: ThemePreference; icon: React.ReactNode; label: string }> = [
-    { value: 'light', icon: <Sun className="w-4 h-4" />, label: t('settings.themeLight') },
-    { value: 'dark', icon: <Moon className="w-4 h-4" />, label: t('settings.themeDark') },
-    { value: 'system', icon: <Monitor className="w-4 h-4" />, label: t('settings.themeSystem') },
+  const themes: Array<{
+    value: ThemePreference;
+    icon: React.ReactNode;
+    label: string;
+  }> = [
+    {
+      value: "light",
+      icon: <Sun className="w-4 h-4" />,
+      label: t("settings.themeLight"),
+    },
+    {
+      value: "dark",
+      icon: <Moon className="w-4 h-4" />,
+      label: t("settings.themeDark"),
+    },
+    {
+      value: "system",
+      icon: <Monitor className="w-4 h-4" />,
+      label: t("settings.themeSystem"),
+    },
   ];
 
   const languages = [
-    { code: 'en', label: 'English' },
-    { code: 'ja', label: '日本語' },
+    { code: "en", label: "English" },
+    { code: "ja", label: "日本語" },
   ];
 
   return (
     <main className="flex-1 overflow-y-auto">
       <div className="max-w-2xl mx-auto p-6 space-y-8">
-        <h1 className="text-2xl font-semibold">{t('settings.title')}</h1>
+        <h1 className="text-2xl font-semibold">{t("settings.title")}</h1>
 
         {/* Appearance Section */}
         <section className="space-y-4">
-          <h2 className="text-lg font-medium">{t('settings.appearance')}</h2>
+          <h2 className="text-lg font-medium">{t("settings.appearance")}</h2>
 
           {/* Theme */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">{t('settings.theme')}</label>
+            <label className="text-sm font-medium">{t("settings.theme")}</label>
             <div className="flex gap-2">
               {themes.map(({ value, icon, label }) => (
                 <button
                   key={value}
                   onClick={() => setTheme(value)}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-2 rounded-md border transition-colors',
+                    "flex items-center gap-2 px-4 py-2 rounded-md border transition-colors",
                     theme === value
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:bg-accent'
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:bg-accent"
                   )}
                 >
                   {icon}
@@ -114,17 +139,19 @@ export function SettingsPanel() {
 
           {/* Language */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">{t('settings.language')}</label>
+            <label className="text-sm font-medium">
+              {t("settings.language")}
+            </label>
             <div className="flex gap-2">
               {languages.map(({ code, label }) => (
                 <button
                   key={code}
                   onClick={() => i18n.changeLanguage(code)}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-2 rounded-md border transition-colors',
+                    "flex items-center gap-2 px-4 py-2 rounded-md border transition-colors",
                     i18n.language === code
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:bg-accent'
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:bg-accent"
                   )}
                 >
                   <Globe className="w-4 h-4" />
@@ -137,10 +164,12 @@ export function SettingsPanel() {
 
         {/* Library Section */}
         <section className="space-y-4">
-          <h2 className="text-lg font-medium">{t('settings.library')}</h2>
+          <h2 className="text-lg font-medium">{t("settings.library")}</h2>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">{t('settings.folders')}</label>
+            <label className="text-sm font-medium">
+              {t("settings.folders")}
+            </label>
             <div className="p-4 border border-border rounded-md bg-background-secondary">
               <p className="text-sm text-muted-foreground">
                 Library folder management coming soon...
@@ -151,7 +180,9 @@ export function SettingsPanel() {
 
         {/* Cloud Storage Section */}
         <section className="space-y-4">
-          <h2 className="text-lg font-medium">{t('settings.cloudStorage', 'Cloud Storage')}</h2>
+          <h2 className="text-lg font-medium">
+            {t("settings.cloudStorage", "Cloud Storage")}
+          </h2>
 
           {/* OneDrive */}
           <div className="space-y-3">
@@ -161,7 +192,9 @@ export function SettingsPanel() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
                     <Cloud className="w-5 h-5" />
-                    <span className="text-sm font-medium">{t('settings.connected', 'Connected')}</span>
+                    <span className="text-sm font-medium">
+                      {t("settings.connected", "Connected")}
+                    </span>
                   </div>
                   <button
                     onClick={handleDisconnectOneDrive}
@@ -173,7 +206,7 @@ export function SettingsPanel() {
                     ) : (
                       <CloudOff className="w-4 h-4" />
                     )}
-                    {t('settings.disconnect', 'Disconnect')}
+                    {t("settings.disconnect", "Disconnect")}
                   </button>
                 </div>
               ) : (
@@ -181,7 +214,9 @@ export function SettingsPanel() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <CloudOff className="w-5 h-5" />
-                      <span className="text-sm">{t('settings.notConnected', 'Not connected')}</span>
+                      <span className="text-sm">
+                        {t("settings.notConnected", "Not connected")}
+                      </span>
                     </div>
                     <button
                       onClick={handleConnectOneDrive}
@@ -193,21 +228,27 @@ export function SettingsPanel() {
                       ) : (
                         <ExternalLink className="w-4 h-4" />
                       )}
-                      {t('settings.connect', 'Connect')}
+                      {t("settings.connect", "Connect")}
                     </button>
                   </div>
-                  
+
                   {/* Auth code input */}
                   <div className="pt-3 border-t border-border space-y-2">
                     <label className="text-xs text-muted-foreground">
-                      {t('settings.pasteAuthCode', 'After authorizing, paste the code here:')}
+                      {t(
+                        "settings.pasteAuthCode",
+                        "After authorizing, paste the code here:"
+                      )}
                     </label>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={authCode}
                         onChange={(e) => setAuthCode(e.target.value)}
-                        placeholder={t('settings.authCodePlaceholder', 'Authorization code')}
+                        placeholder={t(
+                          "settings.authCodePlaceholder",
+                          "Authorization code"
+                        )}
                         className="flex-1 px-3 py-1.5 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                       />
                       <button
@@ -215,14 +256,17 @@ export function SettingsPanel() {
                         disabled={oneDriveLoading || !authCode.trim()}
                         className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                       >
-                        {t('settings.submit', 'Submit')}
+                        {t("settings.submit", "Submit")}
                       </button>
                     </div>
                   </div>
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                {t('settings.oneDriveDescription', 'Connect OneDrive to scan cloud-only files without downloading them.')}
+                {t(
+                  "settings.oneDriveDescription",
+                  "Connect OneDrive to scan cloud-only files without downloading them."
+                )}
               </p>
             </div>
           </div>
@@ -230,10 +274,12 @@ export function SettingsPanel() {
 
         {/* Audio Section */}
         <section className="space-y-4">
-          <h2 className="text-lg font-medium">{t('settings.audio')}</h2>
+          <h2 className="text-lg font-medium">{t("settings.audio")}</h2>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">{t('settings.outputDevice')}</label>
+            <label className="text-sm font-medium">
+              {t("settings.outputDevice")}
+            </label>
             <div className="p-4 border border-border rounded-md bg-background-secondary">
               <p className="text-sm text-muted-foreground">
                 Audio device selection coming soon...
@@ -246,11 +292,12 @@ export function SettingsPanel() {
         <section className="space-y-4 pt-8 border-t border-border">
           <div className="text-center space-y-2">
             <h2 className="text-xl font-semibold">
-              {t('common.appName')} <span className="text-muted-foreground">{t('common.appSubtitle')}</span>
+              {t("common.appName")}{" "}
+              <span className="text-muted-foreground">
+                {t("common.appSubtitle")}
+              </span>
             </h2>
-            <p className="text-sm text-muted-foreground">
-              Version 0.1.0
-            </p>
+            <p className="text-sm text-muted-foreground">Version 0.1.0</p>
             <p className="text-xs text-muted-foreground">
               Music management for Sony Walkman devices
             </p>

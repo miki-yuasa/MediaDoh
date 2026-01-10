@@ -411,14 +411,14 @@ pub async fn onedrive_get_auth_url(state: State<'_, AppState>) -> Result<String>
 #[tauri::command]
 pub async fn onedrive_exchange_code(code: String, state: State<'_, AppState>) -> Result<()> {
     let tokens = state.onedrive.exchange_code(&code).await?;
-    
+
     // Save tokens to database for persistence
     let tokens_json = serde_json::to_string(&tokens)?;
-    
+
     let now = chrono::Utc::now().to_rfc3339();
     sqlx::query(
         "INSERT INTO settings (key, value, updated_at) VALUES ('onedrive_tokens', ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?"
+         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?",
     )
     .bind(&tokens_json)
     .bind(&now)
@@ -426,7 +426,7 @@ pub async fn onedrive_exchange_code(code: String, state: State<'_, AppState>) ->
     .bind(&now)
     .execute(&state.db)
     .await?;
-    
+
     Ok(())
 }
 
@@ -436,18 +436,18 @@ pub async fn onedrive_is_authenticated(state: State<'_, AppState>) -> Result<boo
     // Try to load tokens from database if not in memory
     if !state.onedrive.is_authenticated().await {
         let result = sqlx::query_scalar::<_, String>(
-            "SELECT value FROM settings WHERE key = 'onedrive_tokens'"
+            "SELECT value FROM settings WHERE key = 'onedrive_tokens'",
         )
         .fetch_optional(&state.db)
         .await?;
-        
+
         if let Some(tokens_json) = result {
             if let Ok(tokens) = serde_json::from_str::<OneDriveTokens>(&tokens_json) {
                 state.onedrive.set_tokens(tokens).await;
             }
         }
     }
-    
+
     Ok(state.onedrive.is_authenticated().await)
 }
 
@@ -458,9 +458,9 @@ pub async fn onedrive_disconnect(state: State<'_, AppState>) -> Result<()> {
     sqlx::query("DELETE FROM settings WHERE key = 'onedrive_tokens'")
         .execute(&state.db)
         .await?;
-    
+
     // Note: Can't easily clear in-memory tokens without interior mutability
     // The client will check is_authenticated() which checks expiry
-    
+
     Ok(())
 }

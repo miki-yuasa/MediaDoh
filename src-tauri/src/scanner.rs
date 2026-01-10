@@ -132,7 +132,7 @@ pub async fn scan_directory_with_options(
 
     let mut songs = Vec::new();
     let mut skipped_cloud = 0usize;
-    
+
     let walker = WalkDir::new(&path)
         .follow_links(true)
         .into_iter()
@@ -143,7 +143,7 @@ pub async fn scan_directory_with_options(
         if file_path.is_file() && is_audio_file(file_path) {
             // Check if file is cloud-only
             let cloud_status = get_cloud_file_status(file_path);
-            
+
             let song_result = match cloud_status {
                 CloudFileStatus::CloudOnly => {
                     if options.skip_cloud_only {
@@ -151,7 +151,7 @@ pub async fn scan_directory_with_options(
                         skipped_cloud += 1;
                         continue;
                     }
-                    
+
                     if options.use_onedrive_api {
                         // Try to get metadata from OneDrive API
                         if let Some(ref client) = onedrive_client {
@@ -249,9 +249,8 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
         .to_string();
 
     // Convert local path to OneDrive path
-    let onedrive_path = local_path_to_onedrive_path(&path).ok_or_else(|| {
-        MediaDohError::InvalidPath("Cannot determine OneDrive path".to_string())
-    })?;
+    let onedrive_path = local_path_to_onedrive_path(&path)
+        .ok_or_else(|| MediaDohError::InvalidPath("Cannot determine OneDrive path".to_string()))?;
 
     // Get metadata from OneDrive API
     let file_info = client.get_file_metadata(&onedrive_path).await?;
