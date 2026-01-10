@@ -28,6 +28,13 @@ export async function scanLibrary(path: string): Promise<Song[]> {
 }
 
 /**
+ * Stop the current library scan
+ */
+export async function stopScan(): Promise<void> {
+  return invoke("stop_scan");
+}
+
+/**
  * Get all songs from the library
  */
 export async function getSongs(): Promise<Song[]> {
@@ -157,6 +164,15 @@ export function onScanCompleted(
   callback: (count: number) => void
 ): Promise<UnlistenFn> {
   return listen<number>("scan-completed", (event) => callback(event.payload));
+}
+
+/**
+ * Listen for scan cancelled events
+ */
+export function onScanCancelled(
+  callback: (count: number) => void
+): Promise<UnlistenFn> {
+  return listen<number>("scan-cancelled", (event) => callback(event.payload));
 }
 
 // ============================================================================

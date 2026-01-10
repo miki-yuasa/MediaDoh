@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -112,7 +113,7 @@ pub async fn scan_directory(
     pool: &DbPool,
     app: Option<&tauri::AppHandle>,
 ) -> Result<Vec<Song>> {
-    scan_directory_with_options(path, pool, app, ScanOptions::default(), None).await
+    scan_directory_with_options(path, pool, app, ScanOptions::default(), None, None).await
 }
 
 /// Scan a directory with custom options and optional OneDrive client
@@ -122,6 +123,7 @@ pub async fn scan_directory_with_options(
     app: Option<&tauri::AppHandle>,
     options: ScanOptions,
     onedrive_client: Option<Arc<OneDriveClient>>,
+    cancel_flag: Option<Arc<AtomicBool>>,
 ) -> Result<Vec<Song>> {
     use tauri::Emitter;
 
@@ -139,6 +141,17 @@ pub async fn scan_directory_with_options(
         .filter_map(|e| e.ok());
 
     for entry in walker {
+        // Check for cancellation
+        if let Some(ref flag) = cancel_flag {
+            if flag.load(Ordering::SeqCst) {
+                log::info!("Scan cancelled by user");
+                if let Some(app_handle) = app {
+                    let _ = app_handle.emit("scan-cancelled", songs.len());
+                }
+                break;
+            }
+        }
+
         let file_path = entry.path();
         if file_path.is_file() && is_audio_file(file_path) {
             // Check if file is cloud-only
@@ -252,8 +265,29 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
     let onedrive_path = local_path_to_onedrive_path(&path)
         .ok_or_else(|| MediaDohError::InvalidPath("Cannot determine OneDrive path".to_string()))?;
 
+    log::debug!("Fetching OneDrive metadata for: {}", onedrive_path);
+
     // Get metadata from OneDrive API
     let file_info = client.get_file_metadata(&onedrive_path).await?;
+
+    // Log what we got from the API
+    log::debug!(
+        "OneDrive file info - name: {}, size: {}, has_audio: {}",
+        file_info.name,
+        file_info.size,
+        file_info.audio.is_some()
+    );
+
+    if let Some(ref audio) = file_info.audio {
+        log::debug!(
+            "Audio metadata - title: {:?}, artist: {:?}, album: {:?}, duration: {:?}",
+            audio.title,
+            audio.artist,
+            audio.album,
+            audio.duration
+        );
+    }
+
     let metadata = graph_metadata_to_audio(&file_info);
 
     // Determine format from extension
@@ -266,13 +300,47 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
     let is_lossless = format.is_lossless();
     let now = Utc::now();
 
+    // Try to get thumbnail/album art
+    let (has_art, art_cache_path) = match client.get_thumbnail_url(&file_info.id).await {
+        Ok(Some(thumb_url)) => {
+            log::debug!("Got thumbnail URL for {}", file_name);
+            // Download and cache the thumbnail
+            match download_and_cache_thumbnail(&thumb_url, &metadata, &file_name).await {
+                Ok(cached_path) => (true, Some(cached_path)),
+                Err(e) => {
+                    log::warn!("Failed to cache thumbnail: {}", e);
+                    (false, None)
+                }
+            }
+        }
+        Ok(None) => {
+            log::debug!("No thumbnail available for {}", file_name);
+            (false, None)
+        }
+        Err(e) => {
+            log::debug!("Failed to get thumbnail: {}", e);
+            (false, None)
+        }
+    };
+
+    // Use title from metadata, falling back to file name without extension
+    let title = metadata
+        .title
+        .clone()
+        .unwrap_or_else(|| {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string()
+        });
+
     Ok(Song {
         id: Uuid::new_v4().to_string(),
         file_path: path,
         file_name,
         file_size: file_info.size,
         file_hash: None,
-        title: metadata.title.unwrap_or_else(|| "Unknown".to_string()),
+        title,
         artist: metadata.artist,
         album_artist: metadata.album_artist,
         album: metadata.album,
@@ -282,16 +350,16 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
         disc_total: metadata.disc_count,
         year: metadata.year,
         genre: metadata.genre,
-        composer: None, // Graph API doesn't expose composer in audio facet easily
+        composer: None,
         duration_ms: metadata.duration_ms.unwrap_or(0),
-        sample_rate: None, // Not available from Graph API
+        sample_rate: None,
         bit_depth: None,
         bitrate: metadata.bitrate,
         channels: None,
         format,
         is_lossless,
-        has_embedded_art: false, // Will try to get thumbnail URL separately
-        art_cache_path: None,
+        has_embedded_art: has_art,
+        art_cache_path,
         date_added: now,
         date_modified: now,
         last_played: None,
@@ -301,6 +369,67 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
         synced_at: None,
         rating: 0,
     })
+}
+
+/// Download and cache a thumbnail from OneDrive
+async fn download_and_cache_thumbnail(
+    thumb_url: &str,
+    metadata: &crate::onedrive::OneDriveAudioMetadata,
+    file_name: &str,
+) -> Result<PathBuf> {
+    let cache_dir = get_artwork_cache_dir()?;
+
+    // Create album key for caching
+    let album_key = format!(
+        "{}-{}",
+        metadata
+            .album_artist
+            .as_deref()
+            .or(metadata.artist.as_deref())
+            .unwrap_or("Unknown"),
+        metadata.album.as_deref().unwrap_or("Unknown")
+    );
+
+    let safe_name: String = album_key
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let artwork_path = cache_dir.join(format!("{}.jpg", safe_name));
+
+    // If already cached, return existing path
+    if artwork_path.exists() {
+        return Ok(artwork_path);
+    }
+
+    // Download the thumbnail
+    let client = reqwest::Client::new();
+    let response = client
+        .get(thumb_url)
+        .send()
+        .await
+        .map_err(|e| MediaDohError::Network(e.to_string()))?;
+
+    if !response.status().is_success() {
+        return Err(MediaDohError::Network("Failed to download thumbnail".to_string()));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| MediaDohError::Network(e.to_string()))?;
+
+    // Write to cache
+    let mut file = File::create(&artwork_path)?;
+    file.write_all(&bytes)?;
+
+    log::debug!("Cached OneDrive artwork: {}", artwork_path.display());
+    Ok(artwork_path)
 }
 
 /// Parse audio file metadata
@@ -346,6 +475,11 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
     let year = tag.and_then(|t| t.year()).map(|y| y as i32);
     let genre = tag.and_then(|t| t.genre().map(|s| s.to_string()));
     let composer = tag.and_then(|t| t.get_string(&ItemKey::Composer).map(|s| s.to_string()));
+
+    log::debug!(
+        "Parsed local file: {} - title: {}, artist: {:?}, album: {:?}, has_tag: {}",
+        file_name, title, artist, album, tag.is_some()
+    );
 
     // Audio properties
     let duration_ms = properties.duration().as_millis() as u64;

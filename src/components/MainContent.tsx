@@ -7,11 +7,12 @@ import {
   RefreshCw,
   LayoutList,
   LayoutGrid,
+  StopCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore, useLibraryStore } from "@/store";
 import { open } from "@tauri-apps/plugin-dialog";
-import { scanLibrary, onSongAdded, onScanCompleted } from "@/api/tauri";
+import { scanLibrary, stopScan, onSongAdded, onScanCompleted, onScanCancelled } from "@/api/tauri";
 import { useQueryClient } from "@tanstack/react-query";
 import { SongList } from "./SongList";
 import { AlbumGrid } from "./AlbumGrid";
@@ -27,6 +28,7 @@ export function MainContent() {
   useEffect(() => {
     let unlistenSongAdded: (() => void) | null = null;
     let unlistenScanCompleted: (() => void) | null = null;
+    let unlistenScanCancelled: (() => void) | null = null;
 
     const setupListeners = async () => {
       unlistenSongAdded = await onSongAdded(() => {
@@ -38,6 +40,11 @@ export function MainContent() {
         setIsScanning(false);
         queryClient.invalidateQueries({ queryKey: ["songs"] });
       });
+
+      unlistenScanCancelled = await onScanCancelled(() => {
+        setIsScanning(false);
+        queryClient.invalidateQueries({ queryKey: ["songs"] });
+      });
     };
 
     setupListeners();
@@ -45,6 +52,7 @@ export function MainContent() {
     return () => {
       if (unlistenSongAdded) unlistenSongAdded();
       if (unlistenScanCompleted) unlistenScanCompleted();
+      if (unlistenScanCancelled) unlistenScanCancelled();
     };
   }, [queryClient, setIsScanning]);
 
@@ -82,6 +90,14 @@ export function MainContent() {
       setIsScanning(false);
     }
   }, [t, setIsScanning]);
+
+  const handleStopScan = useCallback(async () => {
+    try {
+      await stopScan();
+    } catch (error) {
+      console.error("Failed to stop scan:", error);
+    }
+  }, []);
 
   // Render content based on active section
   const renderContent = () => {
@@ -133,25 +149,44 @@ export function MainContent() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Scan Folder */}
-        <button
-          onClick={handleScanFolder}
-          disabled={isScanning}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
-            "hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-          )}
-          title={t("library.addFolder")}
-        >
-          {isScanning ? (
-            <RefreshCw className="w-4 h-4 animate-spin" />
-          ) : (
+        {/* Scan Folder / Stop Scan */}
+        {isScanning ? (
+          <button
+            onClick={handleStopScan}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
+              "bg-destructive/10 text-destructive hover:bg-destructive/20"
+            )}
+            title={t("library.stopScan", "Stop scanning")}
+          >
+            <StopCircle className="w-4 h-4" />
+            <span className="hidden sm:inline">
+              {t("library.stopScan", "Stop")}
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={handleScanFolder}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors",
+              "hover:bg-accent"
+            )}
+            title={t("library.addFolder")}
+          >
             <FolderPlus className="w-4 h-4" />
-          )}
-          <span className="hidden sm:inline">
-            {isScanning ? t("library.scanning") : t("library.addFolder")}
-          </span>
-        </button>
+            <span className="hidden sm:inline">
+              {t("library.addFolder")}
+            </span>
+          </button>
+        )}
+
+        {/* Scanning indicator */}
+        {isScanning && (
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            <span className="hidden sm:inline">{t("library.scanning", "Scanning...")}</span>
+          </div>
+        )}
 
         {/* View Mode Toggle */}
         {activeSection !== "settings" && (

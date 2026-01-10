@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect, useState } from "react";
+import { useCallback, useMemo, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { List, RowComponentProps } from "react-window";
 import { AutoSizer } from "react-virtualized-auto-sizer";
@@ -9,6 +9,9 @@ import {
   Trash2,
   AlertTriangle,
   Loader2,
+  FileText,
+  Play,
+  ListPlus,
 } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
@@ -24,6 +27,7 @@ interface SongRowData {
   currentSongId: string | null;
   onSongClick: (e: React.MouseEvent, songId: string) => void;
   onSongDoubleClick: (song: Song) => void;
+  onSongContextMenu: (e: React.MouseEvent, song: Song) => void;
 }
 
 interface SongRowProps {
@@ -33,6 +37,7 @@ interface SongRowProps {
   isPlaying: boolean;
   onClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
 function SongRow({
@@ -42,6 +47,7 @@ function SongRow({
   isPlaying,
   onClick,
   onDoubleClick,
+  onContextMenu,
 }: SongRowProps) {
   const SyncIndicator = () => {
     switch (song.syncStatus) {
@@ -63,6 +69,7 @@ function SongRow({
       )}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
     >
       <div className="w-8 flex-shrink-0">
         {showAlbumArt ? (
@@ -166,6 +173,7 @@ function VirtualRow({
         isPlaying={isPlaying}
         onClick={(e) => rowProps.onSongClick(e, song.id)}
         onDoubleClick={() => rowProps.onSongDoubleClick(song)}
+        onContextMenu={(e) => rowProps.onSongContextMenu(e, song)}
       />
     </div>
   );
@@ -189,6 +197,25 @@ export function SongList() {
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    song: Song;
+  } | null>(null);
+  const [showMetadataEditor, setShowMetadataEditor] = useState(false);
+  const [editingSong, setEditingSong] = useState<Song | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const { data: fetchedSongs } = useQuery({
     queryKey: ["songs"],
@@ -309,6 +336,50 @@ export function SongList() {
     }
   }, [selectedSongIds, songs, setSongs, clearSelection, queryClient]);
 
+  const handleSongContextMenu = useCallback(
+    (e: React.MouseEvent, song: Song) => {
+      e.preventDefault();
+      // If the song isn't already selected, select it
+      if (!selectedSongIds.has(song.id)) {
+        selectSong(song.id, { multi: false });
+      }
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        song,
+      });
+    },
+    [selectedSongIds, selectSong]
+  );
+
+  const handlePlayFromHere = useCallback(
+    async (song: Song) => {
+      const songIndex = filteredSongs.findIndex((s) => s.id === song.id);
+      const queue = filteredSongs.slice(songIndex);
+      setQueue(queue);
+      setCurrentSong(queue[0]);
+      setIsPlaying(true);
+      try {
+        await playSong(song.filePath);
+      } catch (error) {
+        console.error("Failed to play song:", error);
+      }
+      setContextMenu(null);
+    },
+    [filteredSongs, setQueue, setCurrentSong, setIsPlaying]
+  );
+
+  const handleViewMetadata = useCallback((song: Song) => {
+    setEditingSong(song);
+    setShowMetadataEditor(true);
+    setContextMenu(null);
+  }, []);
+
+  const handleDeleteFromContextMenu = useCallback(() => {
+    setContextMenu(null);
+    setShowDeleteConfirm(true);
+  }, []);
+
   const rowData: SongRowData = useMemo(
     () => ({
       items: flattenedList,
@@ -316,6 +387,7 @@ export function SongList() {
       currentSongId: currentSong?.id || null,
       onSongClick: handleSongClick,
       onSongDoubleClick: handleSongDoubleClick,
+      onSongContextMenu: handleSongContextMenu,
     }),
     [
       flattenedList,
@@ -323,6 +395,7 @@ export function SongList() {
       currentSong,
       handleSongClick,
       handleSongDoubleClick,
+      handleSongContextMenu,
     ]
   );
 
@@ -443,6 +516,145 @@ export function SongList() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[160px] bg-popover border border-border rounded-md shadow-lg py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={() => handlePlayFromHere(contextMenu.song)}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
+          >
+            <Play className="w-4 h-4" />
+            {t("contextMenu.playFromHere", "Play from here")}
+          </button>
+          <button
+            onClick={() => handleViewMetadata(contextMenu.song)}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
+          >
+            <FileText className="w-4 h-4" />
+            {t("contextMenu.viewMetadata", "View/Edit Metadata")}
+          </button>
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left text-muted-foreground"
+            disabled
+          >
+            <ListPlus className="w-4 h-4" />
+            {t("contextMenu.addToPlaylist", "Add to Playlist...")}
+          </button>
+          <div className="border-t border-border my-1" />
+          <button
+            onClick={handleDeleteFromContextMenu}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-destructive/10 text-destructive transition-colors text-left"
+          >
+            <Trash2 className="w-4 h-4" />
+            {t("contextMenu.deleteFromIndex", "Delete from Index")}
+          </button>
+        </div>
+      )}
+
+      {/* Metadata Editor Modal */}
+      {showMetadataEditor && editingSong && (
+        <MetadataEditor
+          song={editingSong}
+          onClose={() => {
+            setShowMetadataEditor(false);
+            setEditingSong(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Metadata Editor Component
+interface MetadataEditorProps {
+  song: Song;
+  onClose: () => void;
+}
+
+function MetadataEditor({ song, onClose }: MetadataEditorProps) {
+  const { t } = useTranslation();
+
+  const fields = [
+    { label: t("metadata.title", "Title"), value: song.title },
+    { label: t("metadata.artist", "Artist"), value: song.artist || "-" },
+    { label: t("metadata.album", "Album"), value: song.album || "-" },
+    { label: t("metadata.albumArtist", "Album Artist"), value: song.albumArtist || "-" },
+    { label: t("metadata.trackNumber", "Track"), value: song.trackNumber ? `${song.trackNumber}${song.trackTotal ? ` / ${song.trackTotal}` : ""}` : "-" },
+    { label: t("metadata.discNumber", "Disc"), value: song.discNumber ? `${song.discNumber}${song.discTotal ? ` / ${song.discTotal}` : ""}` : "-" },
+    { label: t("metadata.year", "Year"), value: song.year || "-" },
+    { label: t("metadata.genre", "Genre"), value: song.genre || "-" },
+    { label: t("metadata.duration", "Duration"), value: formatDuration(song.durationMs) },
+    { label: t("metadata.format", "Format"), value: song.format.toUpperCase() },
+    { label: t("metadata.bitrate", "Bitrate"), value: song.bitrate ? `${song.bitrate} kbps` : "-" },
+    { label: t("metadata.sampleRate", "Sample Rate"), value: song.sampleRate ? `${song.sampleRate} Hz` : "-" },
+    { label: t("metadata.bitDepth", "Bit Depth"), value: song.bitDepth ? `${song.bitDepth}-bit` : "-" },
+    { label: t("metadata.channels", "Channels"), value: song.channels || "-" },
+    { label: t("metadata.filePath", "File Path"), value: song.filePath, mono: true },
+    { label: t("metadata.fileSize", "File Size"), value: `${(song.fileSize / 1024 / 1024).toFixed(2)} MB` },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-background border border-border rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h2 className="text-lg font-semibold">{t("metadata.title", "Song Metadata")}</h2>
+          <button
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex gap-4 p-4 overflow-y-auto max-h-[calc(80vh-120px)]">
+          {/* Album Art */}
+          <div className="flex-shrink-0">
+            <div className="w-32 h-32 bg-muted rounded-lg flex items-center justify-center">
+              {song.hasEmbeddedArt && song.artCachePath ? (
+                <img
+                  src={song.artCachePath}
+                  alt={song.album || "Album art"}
+                  className="w-full h-full object-cover rounded-lg"
+                />
+              ) : (
+                <Music className="w-12 h-12 text-muted-foreground" />
+              )}
+            </div>
+          </div>
+
+          {/* Metadata Fields */}
+          <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-2">
+            {fields.map(({ label, value, mono }) => (
+              <div key={label} className={mono ? "col-span-2" : ""}>
+                <label className="text-xs text-muted-foreground">{label}</label>
+                <p className={cn("text-sm truncate", mono && "font-mono text-xs")} title={String(value)}>
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border bg-background-secondary">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-md border border-border hover:bg-accent transition-colors"
+          >
+            {t("common.close", "Close")}
+          </button>
+        </div>
       </div>
     </div>
   );

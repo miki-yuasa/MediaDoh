@@ -9,6 +9,7 @@ use crate::player::{AudioPlayer, PlayerState};
 use crate::scanner::{get_all_songs, scan_directory_with_options, ScanOptions};
 use crate::sync::{compare_with_device, sync_to_device, SyncComparison, SyncResult};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
@@ -17,6 +18,7 @@ pub struct AppState {
     pub db: DbPool,
     pub player: Mutex<AudioPlayer>,
     pub onedrive: Arc<OneDriveClient>,
+    pub scan_cancelled: Arc<AtomicBool>,
 }
 
 /// Library folder info
@@ -45,6 +47,9 @@ pub async fn scan_library(
 ) -> Result<Vec<Song>> {
     let path = PathBuf::from(&path);
 
+    // Reset cancellation flag before starting
+    state.scan_cancelled.store(false, Ordering::SeqCst);
+
     // Emit scan started event
     let _ = app.emit("scan-started", &path.to_string_lossy().to_string());
 
@@ -59,6 +64,7 @@ pub async fn scan_library(
         Some(&app),
         options,
         Some(state.onedrive.clone()),
+        Some(state.scan_cancelled.clone()),
     )
     .await?;
 
@@ -66,6 +72,14 @@ pub async fn scan_library(
     let _ = app.emit("scan-completed", songs.len());
 
     Ok(songs)
+}
+
+/// Stop the current library scan
+#[tauri::command]
+pub async fn stop_scan(state: State<'_, AppState>) -> Result<()> {
+    state.scan_cancelled.store(true, Ordering::SeqCst);
+    log::info!("Scan cancellation requested");
+    Ok(())
 }
 
 /// Get all songs from the library
@@ -406,7 +420,16 @@ pub async fn scan_all_libraries(state: State<'_, AppState>, app: AppHandle) -> R
 
     let options = ScanOptions::default();
 
+    // Reset cancellation flag before starting
+    state.scan_cancelled.store(false, Ordering::SeqCst);
+
     for folder in folders {
+        // Check for cancellation between folders
+        if state.scan_cancelled.load(Ordering::SeqCst) {
+            log::info!("Scan all libraries cancelled by user");
+            break;
+        }
+
         if folder.is_enabled {
             let path = PathBuf::from(&folder.path);
             match scan_directory_with_options(
@@ -415,6 +438,7 @@ pub async fn scan_all_libraries(state: State<'_, AppState>, app: AppHandle) -> R
                 Some(&app),
                 options.clone(),
                 Some(state.onedrive.clone()),
+                Some(state.scan_cancelled.clone()),
             )
             .await
             {

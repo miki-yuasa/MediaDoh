@@ -60,11 +60,29 @@ pub fn run() {
             // Initialize OneDrive client
             let onedrive_client = Arc::new(OneDriveClient::new(onedrive_client_id));
 
+            // Load OneDrive tokens from database if available
+            tauri::async_runtime::block_on(async {
+                if let Ok(Some(tokens_json)) = sqlx::query_scalar::<_, String>(
+                    "SELECT value FROM settings WHERE key = 'onedrive_tokens'",
+                )
+                .fetch_optional(&db)
+                .await
+                {
+                    if let Ok(tokens) =
+                        serde_json::from_str::<onedrive::OneDriveTokens>(&tokens_json)
+                    {
+                        onedrive_client.set_tokens(tokens).await;
+                        log::info!("Loaded OneDrive tokens from database");
+                    }
+                }
+            });
+
             // Create app state
             let state = AppState {
                 db,
                 player: Mutex::new(player),
                 onedrive: onedrive_client,
+                scan_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             };
 
             app.manage(state);
@@ -75,6 +93,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Library commands
             commands::scan_library,
+            commands::stop_scan,
             commands::get_songs,
             commands::search_songs,
             commands::clear_library,
