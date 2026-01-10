@@ -276,18 +276,29 @@ export async function setViewMode(mode: ViewMode): Promise<void> {
 // OneDrive API
 // ============================================================================
 
-/**
- * Get the OAuth authorization URL for OneDrive
- */
-export async function getOneDriveAuthUrl(): Promise<string> {
-  return invoke<string>("onedrive_get_auth_url");
+export interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+  message: string;
 }
 
 /**
- * Exchange authorization code for tokens
+ * Start OneDrive device code authentication flow
+ * Returns info for user to authenticate at microsoft.com/devicelogin
  */
-export async function exchangeOneDriveCode(code: string): Promise<void> {
-  return invoke("onedrive_exchange_code", { code });
+export async function startOneDriveAuth(): Promise<DeviceCodeResponse> {
+  return invoke<DeviceCodeResponse>("onedrive_start_auth");
+}
+
+/**
+ * Poll for OneDrive authentication completion
+ * Returns true if authenticated, false if still pending
+ */
+export async function pollOneDriveAuth(deviceCode: string): Promise<boolean> {
+  return invoke<boolean>("onedrive_poll_auth", { deviceCode });
 }
 
 /**

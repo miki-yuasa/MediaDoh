@@ -401,33 +401,40 @@ pub async fn scan_all_libraries(state: State<'_, AppState>, app: AppHandle) -> R
 // OneDrive Commands
 // ============================================================================
 
-/// Get OneDrive authentication URL
+use crate::onedrive::DeviceCodeResponse;
+
+/// Start OneDrive Device Code authentication flow
+/// Returns device code info for user to authenticate at microsoft.com/devicelogin
 #[tauri::command]
-pub async fn onedrive_get_auth_url(state: State<'_, AppState>) -> Result<String> {
-    Ok(state.onedrive.get_auth_url())
+pub async fn onedrive_start_auth(state: State<'_, AppState>) -> Result<DeviceCodeResponse> {
+    state.onedrive.start_device_code_flow().await
 }
 
-/// Exchange authorization code for tokens
+/// Poll for OneDrive authentication completion
+/// Returns true if authenticated, false if still pending
 #[tauri::command]
-pub async fn onedrive_exchange_code(code: String, state: State<'_, AppState>) -> Result<()> {
-    let tokens = state.onedrive.exchange_code(&code).await?;
+pub async fn onedrive_poll_auth(device_code: String, state: State<'_, AppState>) -> Result<bool> {
+    let result = state.onedrive.poll_device_code(&device_code).await?;
 
-    // Save tokens to database for persistence
-    let tokens_json = serde_json::to_string(&tokens)?;
+    if let Some(tokens) = result {
+        // Save tokens to database for persistence
+        let tokens_json = serde_json::to_string(&tokens)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO settings (key, value, updated_at) VALUES ('onedrive_tokens', ?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?",
+        )
+        .bind(&tokens_json)
+        .bind(&now)
+        .bind(&tokens_json)
+        .bind(&now)
+        .execute(&state.db)
+        .await?;
 
-    let now = chrono::Utc::now().to_rfc3339();
-    sqlx::query(
-        "INSERT INTO settings (key, value, updated_at) VALUES ('onedrive_tokens', ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?",
-    )
-    .bind(&tokens_json)
-    .bind(&now)
-    .bind(&tokens_json)
-    .bind(&now)
-    .execute(&state.db)
-    .await?;
-
-    Ok(())
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
 
 /// Check if OneDrive is authenticated
@@ -459,8 +466,8 @@ pub async fn onedrive_disconnect(state: State<'_, AppState>) -> Result<()> {
         .execute(&state.db)
         .await?;
 
-    // Note: Can't easily clear in-memory tokens without interior mutability
-    // The client will check is_authenticated() which checks expiry
+    // Clear in-memory tokens
+    state.onedrive.clear_tokens().await;
 
     Ok(())
 }

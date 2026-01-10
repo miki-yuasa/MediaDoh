@@ -2,22 +2,33 @@
 //!
 //! Provides functionality to:
 //! 1. Detect if files are OneDrive cloud-only placeholders
-//! 2. Authenticate with Microsoft Graph API
+//! 2. Authenticate with Microsoft Graph API using Device Code Flow
 //! 3. Fetch audio metadata from OneDrive without downloading files
 
 use crate::error::{MediaDohError, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// OneDrive client ID for Microsoft Graph API
-/// Users should register their own app at https://portal.azure.com
+/// This is a public client ID that can be used for device code flow
+/// Users can also register their own app at https://portal.azure.com
 const DEFAULT_CLIENT_ID: &str = "your-client-id-here";
-const REDIRECT_URI: &str = "http://localhost:19274/callback";
 const GRAPH_API_BASE: &str = "https://graph.microsoft.com/v1.0";
+
+/// Device code response from Microsoft
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceCodeResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: i64,
+    pub interval: i64,
+    pub message: String,
+}
 
 /// Cloud file status
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -141,29 +152,60 @@ impl OneDriveClient {
         self.tokens.read().await.clone()
     }
 
-    /// Get OAuth authorization URL for user to authenticate
-    pub fn get_auth_url(&self) -> String {
-        let scopes = "Files.Read Files.Read.All offline_access";
-        format!(
-            "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?\
-            client_id={}&\
-            response_type=code&\
-            redirect_uri={}&\
-            scope={}&\
-            response_mode=query",
-            self.client_id,
-            urlencoding::encode(REDIRECT_URI),
-            urlencoding::encode(scopes)
-        )
+    /// Clear tokens (disconnect)
+    pub async fn clear_tokens(&self) {
+        let mut t = self.tokens.write().await;
+        *t = None;
     }
 
-    /// Exchange authorization code for tokens
-    pub async fn exchange_code(&self, code: &str) -> Result<OneDriveTokens> {
+    /// Start Device Code Flow - returns info for user to authenticate
+    /// User goes to verification_uri and enters user_code
+    pub async fn start_device_code_flow(&self) -> Result<DeviceCodeResponse> {
+        // Check if client ID is configured
+        if self.client_id == "your-client-id-here" || self.client_id.is_empty() {
+            return Err(MediaDohError::Network(
+                "OneDrive client ID not configured. Please set up an Azure app and configure the client ID in settings.".to_string()
+            ));
+        }
+
+        let scopes = "Files.Read Files.Read.All offline_access";
+        
         let params = [
             ("client_id", self.client_id.as_str()),
-            ("code", code),
-            ("redirect_uri", REDIRECT_URI),
-            ("grant_type", "authorization_code"),
+            ("scope", scopes),
+        ];
+
+        let response = self
+            .http_client
+            .post("https://login.microsoftonline.com/common/oauth2/v2.0/devicecode")
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(MediaDohError::Network(format!(
+                "Device code request failed: {}",
+                error_text
+            )));
+        }
+
+        let device_code: DeviceCodeResponse = response
+            .json::<DeviceCodeResponse>()
+            .await
+            .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+
+        Ok(device_code)
+    }
+
+    /// Poll for tokens after user has authenticated via device code
+    /// Returns Ok(Some(tokens)) when authenticated, Ok(None) if still pending
+    pub async fn poll_device_code(&self, device_code: &str) -> Result<Option<OneDriveTokens>> {
+        let params = [
+            ("client_id", self.client_id.as_str()),
+            ("device_code", device_code),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
         ];
 
         let response = self
@@ -174,37 +216,50 @@ impl OneDriveClient {
             .await
             .map_err(|e| MediaDohError::Network(e.to_string()))?;
 
-        if !response.status().is_success() {
-            let error_text: String = response.text().await.unwrap_or_default();
-            return Err(MediaDohError::Network(format!(
-                "Token exchange failed: {}",
-                error_text
-            )));
+        if response.status().is_success() {
+            #[derive(Deserialize)]
+            struct TokenResponse {
+                access_token: String,
+                refresh_token: Option<String>,
+                expires_in: i64,
+            }
+
+            let token_resp: TokenResponse = response
+                .json::<TokenResponse>()
+                .await
+                .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+
+            let tokens = OneDriveTokens {
+                access_token: token_resp.access_token,
+                refresh_token: token_resp.refresh_token,
+                expires_at: chrono::Utc::now().timestamp() + token_resp.expires_in - 60,
+            };
+
+            // Store tokens
+            let mut t = self.tokens.write().await;
+            *t = Some(tokens.clone());
+
+            return Ok(Some(tokens));
         }
 
+        // Check if authorization is pending
         #[derive(Deserialize)]
-        struct TokenResponse {
-            access_token: String,
-            refresh_token: Option<String>,
-            expires_in: i64,
+        struct ErrorResponse {
+            error: String,
         }
 
-        let token_resp: TokenResponse = response
-            .json::<TokenResponse>()
+        let error_resp: ErrorResponse = response
+            .json::<ErrorResponse>()
             .await
             .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
 
-        let tokens = OneDriveTokens {
-            access_token: token_resp.access_token,
-            refresh_token: token_resp.refresh_token,
-            expires_at: chrono::Utc::now().timestamp() + token_resp.expires_in - 60,
-        };
-
-        // Store tokens
-        let mut t = self.tokens.write().await;
-        *t = Some(tokens.clone());
-
-        Ok(tokens)
+        match error_resp.error.as_str() {
+            "authorization_pending" => Ok(None), // Still waiting for user
+            "slow_down" => Ok(None),             // Need to slow down polling
+            "expired_token" => Err(MediaDohError::Network("Device code expired".to_string())),
+            "access_denied" => Err(MediaDohError::Network("User denied access".to_string())),
+            _ => Err(MediaDohError::Network(format!("Auth error: {}", error_resp.error))),
+        }
     }
 
     /// Refresh access token using refresh token

@@ -93,8 +93,8 @@ pub fn run() {
             commands::get_default_library_folder,
             commands::scan_all_libraries,
             // OneDrive commands
-            commands::onedrive_get_auth_url,
-            commands::onedrive_exchange_code,
+            commands::onedrive_start_auth,
+            commands::onedrive_poll_auth,
             commands::onedrive_is_authenticated,
             commands::onedrive_disconnect,
         ])

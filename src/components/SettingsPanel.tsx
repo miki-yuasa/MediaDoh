@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Moon,
@@ -8,16 +8,19 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  ExternalLink,
+  Copy,
+  Check,
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-shell";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store";
 import type { ThemePreference } from "@/types";
 import {
   isOneDriveAuthenticated,
-  getOneDriveAuthUrl,
-  exchangeOneDriveCode,
+  startOneDriveAuth,
+  pollOneDriveAuth,
   disconnectOneDrive,
+  type DeviceCodeResponse,
 } from "@/api/tauri";
 
 export function SettingsPanel() {
@@ -25,10 +28,19 @@ export function SettingsPanel() {
   const { theme, setTheme } = useUIStore();
   const [oneDriveConnected, setOneDriveConnected] = useState(false);
   const [oneDriveLoading, setOneDriveLoading] = useState(false);
-  const [authCode, setAuthCode] = useState("");
+  const [deviceCode, setDeviceCode] = useState<DeviceCodeResponse | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     checkOneDriveStatus();
+    return () => {
+      // Cleanup polling on unmount
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
   }, []);
 
   const checkOneDriveStatus = async () => {
@@ -43,27 +55,80 @@ export function SettingsPanel() {
   const handleConnectOneDrive = async () => {
     try {
       setOneDriveLoading(true);
-      const authUrl = await getOneDriveAuthUrl();
-      // Open the auth URL in the default browser
-      window.open(authUrl, "_blank");
+      setAuthError(null);
+      const response = await startOneDriveAuth();
+      console.log("Device code response:", response);
+      setDeviceCode(response);
+
+      // Open the verification URL in the default browser
+      await open(response.verification_uri);
+
+      // Start polling for authentication completion
+      const pollInterval = (response.interval || 5) * 1000;
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const authenticated = await pollOneDriveAuth(response.device_code);
+          if (authenticated) {
+            // Success! Stop polling and update UI
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            setDeviceCode(null);
+            setOneDriveConnected(true);
+            setOneDriveLoading(false);
+          }
+        } catch (err) {
+          // Check if it's an error that should stop polling
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          if (
+            errorMsg.includes("expired") ||
+            errorMsg.includes("denied") ||
+            errorMsg.includes("error")
+          ) {
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            setAuthError(errorMsg);
+            setDeviceCode(null);
+            setOneDriveLoading(false);
+          }
+        }
+      }, pollInterval);
     } catch (err) {
       console.error("Failed to start OneDrive auth:", err);
-    } finally {
+      // Tauri errors can be strings or objects with message property
+      let errorMsg = "Failed to start authentication";
+      if (typeof err === "string") {
+        errorMsg = err;
+      } else if (err && typeof err === "object") {
+        if ("message" in err) {
+          errorMsg = String((err as { message: unknown }).message);
+        } else {
+          errorMsg = JSON.stringify(err);
+        }
+      }
+      setAuthError(errorMsg);
       setOneDriveLoading(false);
     }
   };
 
-  const handleSubmitCode = async () => {
-    if (!authCode.trim()) return;
-    try {
-      setOneDriveLoading(true);
-      await exchangeOneDriveCode(authCode.trim());
-      setAuthCode("");
-      await checkOneDriveStatus();
-    } catch (err) {
-      console.error("Failed to exchange code:", err);
-    } finally {
-      setOneDriveLoading(false);
+  const handleCancelAuth = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    setDeviceCode(null);
+    setOneDriveLoading(false);
+    setAuthError(null);
+  };
+
+  const handleCopyCode = async () => {
+    if (deviceCode?.user_code) {
+      await navigator.clipboard.writeText(deviceCode.user_code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -209,7 +274,58 @@ export function SettingsPanel() {
                     {t("settings.disconnect", "Disconnect")}
                   </button>
                 </div>
+              ) : deviceCode ? (
+                // Device code flow - show code to user
+                <div className="space-y-4">
+                  <div className="text-center space-y-2">
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                      <span className="text-sm font-medium">
+                        {t("settings.waitingForAuth", "Waiting for authorization...")}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.deviceCodeInstructions", "A browser window has opened. Enter this code:")}
+                    </p>
+                  </div>
+                  
+                  {/* User code display */}
+                  <div className="flex items-center justify-center gap-2">
+                    <code className="px-4 py-2 text-2xl font-mono font-bold bg-background border border-border rounded-lg tracking-widest">
+                      {deviceCode.user_code}
+                    </code>
+                    <button
+                      onClick={handleCopyCode}
+                      className="p-2 rounded-md hover:bg-accent transition-colors"
+                      title={t("settings.copyCode", "Copy code")}
+                    >
+                      {copied ? (
+                        <Check className="w-5 h-5 text-green-500" />
+                      ) : (
+                        <Copy className="w-5 h-5 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                  
+                  <p className="text-xs text-center text-muted-foreground">
+                    {t("settings.orVisit", "Or visit:")}{" "}
+                    <button
+                      onClick={() => open(deviceCode.verification_uri)}
+                      className="text-primary hover:underline"
+                    >
+                      {deviceCode.verification_uri}
+                    </button>
+                  </p>
+                  
+                  <button
+                    onClick={handleCancelAuth}
+                    className="w-full px-3 py-1.5 text-sm rounded-md border border-border hover:bg-accent transition-colors"
+                  >
+                    {t("settings.cancel", "Cancel")}
+                  </button>
+                </div>
               ) : (
+                // Not connected - show connect button
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-muted-foreground">
@@ -226,40 +342,15 @@ export function SettingsPanel() {
                       {oneDriveLoading ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <ExternalLink className="w-4 h-4" />
+                        <Cloud className="w-4 h-4" />
                       )}
                       {t("settings.connect", "Connect")}
                     </button>
                   </div>
-
-                  {/* Auth code input */}
-                  <div className="pt-3 border-t border-border space-y-2">
-                    <label className="text-xs text-muted-foreground">
-                      {t(
-                        "settings.pasteAuthCode",
-                        "After authorizing, paste the code here:"
-                      )}
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={authCode}
-                        onChange={(e) => setAuthCode(e.target.value)}
-                        placeholder={t(
-                          "settings.authCodePlaceholder",
-                          "Authorization code"
-                        )}
-                        className="flex-1 px-3 py-1.5 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
-                      <button
-                        onClick={handleSubmitCode}
-                        disabled={oneDriveLoading || !authCode.trim()}
-                        className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                      >
-                        {t("settings.submit", "Submit")}
-                      </button>
-                    </div>
-                  </div>
+                  
+                  {authError && (
+                    <p className="text-xs text-destructive">{authError}</p>
+                  )}
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
