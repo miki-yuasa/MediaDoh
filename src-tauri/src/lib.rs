@@ -18,7 +18,8 @@ use database::{get_app_data_dir, init_database};
 use onedrive::OneDriveClient;
 use player::AudioPlayer;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,6 +34,77 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            // Build the application menu
+            let app_menu = SubmenuBuilder::new(app, "MediaDoh")
+                .item(&PredefinedMenuItem::about(
+                    app,
+                    Some("About MediaDoh"),
+                    None,
+                )?)
+                .separator()
+                .item(&PredefinedMenuItem::services(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::hide(app, Some("Hide MediaDoh"))?)
+                .item(&PredefinedMenuItem::hide_others(app, Some("Hide Others"))?)
+                .item(&PredefinedMenuItem::show_all(app, Some("Show All"))?)
+                .separator()
+                .item(&PredefinedMenuItem::quit(app, Some("Quit MediaDoh"))?)
+                .build()?;
+
+            let import_item = MenuItemBuilder::new("Import Playlist...")
+                .id("import_playlist")
+                .accelerator("CmdOrCtrl+I")
+                .build(app)?;
+
+            let export_item = MenuItemBuilder::new("Export Playlist...")
+                .id("export_playlist")
+                .accelerator("CmdOrCtrl+E")
+                .build(app)?;
+
+            let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&import_item)
+                .item(&export_item)
+                .separator()
+                .item(&PredefinedMenuItem::close_window(
+                    app,
+                    Some("Close Window"),
+                )?)
+                .build()?;
+
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .item(&PredefinedMenuItem::undo(app, None)?)
+                .item(&PredefinedMenuItem::redo(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::cut(app, None)?)
+                .item(&PredefinedMenuItem::copy(app, None)?)
+                .item(&PredefinedMenuItem::paste(app, None)?)
+                .item(&PredefinedMenuItem::select_all(app, None)?)
+                .build()?;
+
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .item(&PredefinedMenuItem::fullscreen(
+                    app,
+                    Some("Toggle Fullscreen"),
+                )?)
+                .build()?;
+
+            let window_menu = SubmenuBuilder::new(app, "Window")
+                .item(&PredefinedMenuItem::minimize(app, None)?)
+                .item(&PredefinedMenuItem::maximize(app, Some("Zoom"))?)
+                .separator()
+                .item(&PredefinedMenuItem::close_window(app, None)?)
+                .build()?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&app_menu)
+                .item(&file_menu)
+                .item(&edit_menu)
+                .item(&view_menu)
+                .item(&window_menu)
+                .build()?;
+
+            app.set_menu(menu)?;
+
             // Initialize database
             let app_data_dir = get_app_data_dir().expect("Failed to get app data directory");
 
@@ -88,6 +160,23 @@ pub fn run() {
 
             log::info!("MediaDoh initialized successfully");
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "import_playlist" => {
+                    // Emit event to frontend to handle import
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.emit("menu-import-playlist", ());
+                    }
+                }
+                "export_playlist" => {
+                    // Emit event to frontend to handle export
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.emit("menu-export-playlist", ());
+                    }
+                }
+                _ => {}
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Library commands

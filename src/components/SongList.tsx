@@ -34,6 +34,68 @@ import type { Song, SongGroup } from "@/types";
 
 const ROW_HEIGHT = 32; // Standard row height
 
+// Column width configuration
+interface ColumnWidths {
+  artwork: number;
+  trackNumber: number;
+  title: number; // flex-1, this is min-width
+  artist: number;
+  album: number;
+  year: number;
+  dateAdded: number;
+  duration: number;
+  format: number;
+  sync: number;
+}
+
+const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
+  artwork: 40,
+  trackNumber: 32,
+  title: 200, // resizable column
+  artist: 160,
+  album: 160,
+  year: 50,
+  dateAdded: 90,
+  duration: 56,
+  format: 48,
+  sync: 24,
+};
+
+const MIN_COLUMN_WIDTHS: ColumnWidths = {
+  artwork: 40,
+  trackNumber: 32,
+  title: 80,
+  artist: 80,
+  album: 80,
+  year: 45,
+  dateAdded: 70,
+  duration: 56,
+  format: 48,
+  sync: 24,
+};
+
+// Load saved column widths from localStorage
+const loadColumnWidths = (): ColumnWidths => {
+  try {
+    const saved = localStorage.getItem("songListColumnWidths");
+    if (saved) {
+      return { ...DEFAULT_COLUMN_WIDTHS, ...JSON.parse(saved) };
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_COLUMN_WIDTHS;
+};
+
+// Save column widths to localStorage
+const saveColumnWidths = (widths: ColumnWidths) => {
+  try {
+    localStorage.setItem("songListColumnWidths", JSON.stringify(widths));
+  } catch {
+    // ignore
+  }
+};
+
 interface SongRowData {
   items: Array<{
     song: Song;
@@ -44,6 +106,7 @@ interface SongRowData {
   }>;
   selectedSongIds: Set<string>;
   currentSongId: string | null;
+  columnWidths: ColumnWidths;
   onSongClick: (e: React.MouseEvent, songId: string) => void;
   onSongDoubleClick: (song: Song) => void;
   onSongContextMenu: (e: React.MouseEvent, song: Song) => void;
@@ -55,9 +118,9 @@ interface SongRowProps {
   song: Song;
   showAlbumArt: boolean;
   isFirstOfAlbum: boolean;
-  albumSongCount: number;
   isSelected: boolean;
   isPlaying: boolean;
+  columnWidths: ColumnWidths;
   onClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -69,9 +132,9 @@ function SongRow({
   song,
   showAlbumArt,
   isFirstOfAlbum,
-  albumSongCount,
   isSelected,
   isPlaying,
+  columnWidths,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -111,7 +174,10 @@ function SongRow({
       onMouseEnter={onMouseEnter}
     >
       {/* Album artwork column - fits within row height */}
-      <div className="w-10 flex-shrink-0 flex items-center justify-center">
+      <div
+        className="flex-shrink-0 flex items-center justify-center"
+        style={{ width: columnWidths.artwork }}
+      >
         {isFirstOfAlbum && showAlbumArt ? (
           <div
             className={cn(
@@ -131,23 +197,58 @@ function SongRow({
           </div>
         ) : null}
       </div>
-      <span className="w-8 text-xs text-muted-foreground text-right flex-shrink-0">
+      <span
+        className="text-xs text-muted-foreground text-right flex-shrink-0 tabular-nums pr-2"
+        style={{ width: columnWidths.trackNumber }}
+      >
         {song.trackNumber || "-"}
       </span>
-      <span className="flex-1 min-w-0 px-2 truncate">{song.title}</span>
-      <span className="w-40 px-2 truncate text-muted-foreground">
+      <span
+        className="flex-1 min-w-0 px-2 truncate"
+        style={{ minWidth: columnWidths.title }}
+      >
+        {song.title}
+      </span>
+      <span
+        className="px-2 truncate text-muted-foreground flex-shrink-0"
+        style={{ width: columnWidths.artist }}
+      >
         {song.artist || "-"}
       </span>
-      <span className="w-40 px-2 truncate text-muted-foreground">
+      <span
+        className="px-2 truncate text-muted-foreground flex-shrink-0"
+        style={{ width: columnWidths.album }}
+      >
         {song.album || "-"}
       </span>
-      <span className="w-14 text-right flex-shrink-0 text-muted-foreground tabular-nums">
+      <span
+        className="text-center flex-shrink-0 text-xs text-muted-foreground tabular-nums"
+        style={{ width: columnWidths.year }}
+      >
+        {song.year || "-"}
+      </span>
+      <span
+        className="text-center flex-shrink-0 text-xs text-muted-foreground"
+        style={{ width: columnWidths.dateAdded }}
+      >
+        {song.dateAdded ? new Date(song.dateAdded).toLocaleDateString() : "-"}
+      </span>
+      <span
+        className="text-right flex-shrink-0 text-muted-foreground tabular-nums"
+        style={{ width: columnWidths.duration }}
+      >
         {formatDuration(song.durationMs)}
       </span>
-      <span className="w-12 text-center flex-shrink-0 text-xs text-muted-foreground uppercase">
+      <span
+        className="text-center flex-shrink-0 text-xs text-muted-foreground uppercase"
+        style={{ width: columnWidths.format }}
+      >
         {song.format}
       </span>
-      <span className="w-6 flex-shrink-0 flex items-center justify-center">
+      <span
+        className="flex-shrink-0 flex items-center justify-center"
+        style={{ width: columnWidths.sync }}
+      >
         <SyncIndicator />
       </span>
     </div>
@@ -205,7 +306,7 @@ function VirtualRow({
   const item = rowProps.items[index];
   if (!item) return <div style={style} />;
 
-  const { song, showAlbumArt, isFirstOfAlbum, albumSongCount } = item;
+  const { song, showAlbumArt, isFirstOfAlbum } = item;
   const isSelected = rowProps.selectedSongIds.has(song.id);
   const isPlaying = rowProps.currentSongId === song.id;
 
@@ -215,14 +316,134 @@ function VirtualRow({
         song={song}
         showAlbumArt={showAlbumArt}
         isFirstOfAlbum={isFirstOfAlbum}
-        albumSongCount={albumSongCount}
         isSelected={isSelected}
         isPlaying={isPlaying}
+        columnWidths={rowProps.columnWidths}
         onClick={(e) => rowProps.onSongClick(e, song.id)}
         onDoubleClick={() => rowProps.onSongDoubleClick(song)}
         onContextMenu={(e) => rowProps.onSongContextMenu(e, song)}
         onMouseDown={(e) => rowProps.onMouseDown(e, song.id)}
         onMouseEnter={() => rowProps.onMouseEnter(song.id)}
+      />
+    </div>
+  );
+}
+
+// ResizableColumnHeader component for drag-to-resize columns
+interface ResizableColumnHeaderProps {
+  column: keyof ColumnWidths;
+  label: string | React.ReactNode;
+  columnWidths: ColumnWidths;
+  onResize: (column: keyof ColumnWidths, newWidth: number) => void;
+  sortable?: boolean;
+  sortColumn?: string | null;
+  sortDirection?: "asc" | "desc";
+  onSort?: () => void;
+  minWidth?: number;
+  className?: string;
+  align?: "left" | "center" | "right";
+}
+
+function ResizableColumnHeader({
+  column,
+  label,
+  columnWidths,
+  onResize,
+  sortable = false,
+  sortColumn,
+  sortDirection,
+  onSort,
+  minWidth,
+  className,
+  align = "left",
+}: ResizableColumnHeaderProps) {
+  const [isResizing, setIsResizing] = useState(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    startXRef.current = e.clientX;
+    startWidthRef.current = columnWidths[column];
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startXRef.current;
+      const newWidth = Math.max(
+        minWidth || MIN_COLUMN_WIDTHS[column],
+        startWidthRef.current + delta
+      );
+      onResize(column, newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, column, minWidth, onResize]);
+
+  const isSorted = sortColumn === column;
+  const justifyClass =
+    align === "right"
+      ? "justify-end"
+      : align === "center"
+      ? "justify-center"
+      : "justify-start";
+
+  // Check if this is a flex column (has flex-1 in className)
+  const isFlex = className?.includes("flex-1");
+
+  return (
+    <div
+      className={cn(
+        "relative flex items-center group",
+        justifyClass,
+        className
+      )}
+      style={
+        isFlex
+          ? { minWidth: columnWidths[column] }
+          : { width: columnWidths[column] }
+      }
+    >
+      {sortable && onSort ? (
+        <button
+          onClick={onSort}
+          className={cn(
+            "flex items-center gap-1 hover:text-foreground transition-colors",
+            isSorted && "text-foreground"
+          )}
+        >
+          <span className="truncate">{label}</span>
+          {isSorted &&
+            (sortDirection === "asc" ? (
+              <ArrowUp className="w-3 h-3 flex-shrink-0" />
+            ) : (
+              <ArrowDown className="w-3 h-3 flex-shrink-0" />
+            ))}
+        </button>
+      ) : (
+        <span className="truncate">{label}</span>
+      )}
+      {/* Resize handle */}
+      <div
+        className={cn(
+          "absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+          isResizing && "bg-primary"
+        )}
+        onMouseDown={handleMouseDown}
       />
     </div>
   );
@@ -245,11 +466,28 @@ export function SongList() {
   const { currentSong, setQueue, setCurrentSong, setIsPlaying, setIsPaused } =
     usePlayerStore();
 
+  // Column widths state with persistence
+  const [columnWidths, setColumnWidths] =
+    useState<ColumnWidths>(loadColumnWidths);
+
+  const handleColumnResize = useCallback(
+    (column: keyof ColumnWidths, newWidth: number) => {
+      setColumnWidths((prev) => {
+        const updated = { ...prev, [column]: newWidth };
+        saveColumnWidths(updated);
+        return updated;
+      });
+    },
+    []
+  );
+
   // Sorting state
   type SortColumn =
     | "title"
     | "artist"
     | "album"
+    | "year"
+    | "dateAdded"
     | "duration"
     | "format"
     | "trackNumber"
@@ -351,6 +589,13 @@ export function SongList() {
             comparison = (a.album || "")
               .toLowerCase()
               .localeCompare((b.album || "").toLowerCase());
+            break;
+          case "year":
+            comparison = (a.year || 0) - (b.year || 0);
+            break;
+          case "dateAdded":
+            comparison =
+              new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime();
             break;
           case "duration":
             comparison = (a.durationMs || 0) - (b.durationMs || 0);
@@ -568,6 +813,7 @@ export function SongList() {
       items: flattenedList,
       selectedSongIds,
       currentSongId: currentSong?.id || null,
+      columnWidths,
       onSongClick: handleSongClick,
       onSongDoubleClick: handleSongDoubleClick,
       onSongContextMenu: handleSongContextMenu,
@@ -578,46 +824,13 @@ export function SongList() {
       flattenedList,
       selectedSongIds,
       currentSong,
+      columnWidths,
       handleSongClick,
       handleSongDoubleClick,
       handleSongContextMenu,
       handleMouseDown,
       handleMouseEnter,
     ]
-  );
-
-  // Sortable column header component
-  const SortableHeader = ({
-    column,
-    label,
-    className,
-  }: {
-    column:
-      | "title"
-      | "artist"
-      | "album"
-      | "duration"
-      | "format"
-      | "trackNumber";
-    label: string;
-    className?: string;
-  }) => (
-    <button
-      onClick={() => handleColumnSort(column)}
-      className={cn(
-        "flex items-center gap-1 hover:text-foreground transition-colors",
-        sortColumn === column && "text-foreground",
-        className
-      )}
-    >
-      {label}
-      {sortColumn === column &&
-        (sortDirection === "asc" ? (
-          <ArrowUp className="w-3 h-3" />
-        ) : (
-          <ArrowDown className="w-3 h-3" />
-        ))}
-    </button>
   );
 
   if (songs.length === 0) {
@@ -632,33 +845,130 @@ export function SongList() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Header */}
+      {/* Header with resizable columns */}
       <div className="flex items-center px-2 py-1.5 border-b border-border bg-background-secondary text-xs font-medium text-muted-foreground">
-        <span className="w-16 flex-shrink-0" />
-        <span className="w-8 text-right flex-shrink-0">
-          <SortableHeader column="trackNumber" label="#" />
-        </span>
-        <span className="flex-1 px-2">
-          <SortableHeader column="title" label={t("view.columns.title")} />
-        </span>
-        <span className="w-40 px-2">
-          <SortableHeader column="artist" label={t("view.columns.artist")} />
-        </span>
-        <span className="w-40 px-2">
-          <SortableHeader column="album" label={t("view.columns.album")} />
-        </span>
-        <span className="w-14 flex-shrink-0 flex justify-end">
-          <SortableHeader
-            column="duration"
-            label={t("view.columns.duration")}
-          />
-        </span>
-        <span className="w-12 flex-shrink-0 flex justify-center">
-          <SortableHeader column="format" label={t("view.columns.format")} />
-        </span>
-        <span className="w-6 text-center flex-shrink-0">
+        {/* Artwork - not resizable */}
+        <div
+          className="flex-shrink-0"
+          style={{ width: columnWidths.artwork }}
+        />
+
+        {/* Track number - resizable */}
+        <ResizableColumnHeader
+          column="trackNumber"
+          label="#"
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("trackNumber")}
+          align="right"
+          className="flex-shrink-0"
+        />
+
+        {/* Title - resizable flex column */}
+        <ResizableColumnHeader
+          column="title"
+          label={t("view.columns.title")}
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("title")}
+          className="flex-1 px-2"
+        />
+
+        {/* Artist - resizable */}
+        <ResizableColumnHeader
+          column="artist"
+          label={t("view.columns.artist")}
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("artist")}
+          className="flex-shrink-0 px-2"
+        />
+
+        {/* Album - resizable */}
+        <ResizableColumnHeader
+          column="album"
+          label={t("view.columns.album")}
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("album")}
+          className="flex-shrink-0 px-2"
+        />
+
+        {/* Year - resizable */}
+        <ResizableColumnHeader
+          column="year"
+          label={t("view.columns.year")}
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("year")}
+          align="center"
+          className="flex-shrink-0"
+        />
+
+        {/* Date Added - resizable */}
+        <ResizableColumnHeader
+          column="dateAdded"
+          label={t("view.columns.dateAdded")}
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("dateAdded")}
+          align="center"
+          className="flex-shrink-0"
+        />
+
+        {/* Duration - resizable */}
+        <ResizableColumnHeader
+          column="duration"
+          label={t("view.columns.duration")}
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("duration")}
+          align="right"
+          className="flex-shrink-0"
+        />
+
+        {/* Format - resizable */}
+        <ResizableColumnHeader
+          column="format"
+          label={t("view.columns.format")}
+          columnWidths={columnWidths}
+          onResize={handleColumnResize}
+          sortable
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={() => handleColumnSort("format")}
+          align="center"
+          className="flex-shrink-0"
+        />
+
+        {/* Sync status - not resizable */}
+        <div
+          className="text-center flex-shrink-0"
+          style={{ width: columnWidths.sync }}
+        >
           {t("view.columns.syncStatus")}
-        </span>
+        </div>
       </div>
 
       {/* Virtualized List */}

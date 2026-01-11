@@ -179,7 +179,8 @@ export function AlbumGrid({
 }: AlbumGridProps) {
   const { t } = useTranslation();
   const { songs, setSongs, searchQuery } = useLibraryStore();
-  const { setQueue, setCurrentSong, setIsPlaying, shuffle } = usePlayerStore();
+  const { setQueue, setCurrentSong, setIsPlaying, setIsPaused, shuffle } =
+    usePlayerStore();
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
 
   // Get card dimensions based on size
@@ -274,6 +275,7 @@ export function AlbumGrid({
       setQueue(shuffledSongs);
       setCurrentSong(shuffledSongs[0]);
       setIsPlaying(true);
+      setIsPaused(false);
       try {
         await playSong(shuffledSongs[0].filePath);
       } catch (error) {
@@ -295,6 +297,7 @@ export function AlbumGrid({
     setQueue(queue);
     setCurrentSong(queue[0]);
     setIsPlaying(true);
+    setIsPaused(false);
     try {
       await playSong(queue[0].filePath);
     } catch (error) {
@@ -307,6 +310,7 @@ export function AlbumGrid({
     setQueue,
     setCurrentSong,
     setIsPlaying,
+    setIsPaused,
   ]);
 
   const handlePlaySong = useCallback(
@@ -319,6 +323,7 @@ export function AlbumGrid({
         setQueue(shuffledSongs);
         setCurrentSong(song);
         setIsPlaying(true);
+        setIsPaused(false);
         try {
           await playSong(song.filePath);
         } catch (error) {
@@ -338,13 +343,22 @@ export function AlbumGrid({
       setQueue(queue);
       setCurrentSong(song);
       setIsPlaying(true);
+      setIsPaused(false);
       try {
         await playSong(song.filePath);
       } catch (error) {
         console.error("Failed to play song:", error);
       }
     },
-    [albumSongs, sortedSongs, shuffle, setQueue, setCurrentSong, setIsPlaying]
+    [
+      albumSongs,
+      sortedSongs,
+      shuffle,
+      setQueue,
+      setCurrentSong,
+      setIsPlaying,
+      setIsPaused,
+    ]
   );
 
   if (songs.length === 0) {
@@ -435,16 +449,21 @@ export function AlbumGrid({
 
         {/* Column Headers */}
         <div className="flex items-center px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase border-b border-border bg-background-secondary">
-          <span className="w-8 text-right flex-shrink-0">#</span>
+          <span className="w-8 text-right flex-shrink-0 pr-2">#</span>
           <span className="flex-1 min-w-0 px-2">
-            {t("library.title", "Title")}
+            {t("view.columns.title", "Title")}
           </span>
-          <span className="w-40 px-2">{t("library.artist", "Artist")}</span>
-          <span className="w-14 text-right flex-shrink-0">
-            {t("library.duration", "Duration")}
+          <span className="w-40 px-2">
+            {t("view.columns.artist", "Artist")}
           </span>
           <span className="w-12 text-center flex-shrink-0">
-            {t("library.format", "Format")}
+            {t("view.columns.year", "Year")}
+          </span>
+          <span className="w-14 text-right flex-shrink-0">
+            {t("view.columns.duration", "Duration")}
+          </span>
+          <span className="w-12 text-center flex-shrink-0">
+            {t("view.columns.format", "Format")}
           </span>
           <span className="w-6 flex-shrink-0"></span>
         </div>
@@ -462,7 +481,7 @@ export function AlbumGrid({
                 )}
                 onDoubleClick={() => handlePlaySong(song, index)}
               >
-                <span className="w-8 text-xs text-muted-foreground text-right flex-shrink-0">
+                <span className="w-8 text-xs text-muted-foreground text-right flex-shrink-0 pr-2">
                   {song.trackNumber || "-"}
                 </span>
                 <span
@@ -475,6 +494,9 @@ export function AlbumGrid({
                 </span>
                 <span className="w-40 px-2 truncate text-muted-foreground">
                   {song.artist || "-"}
+                </span>
+                <span className="w-12 text-center flex-shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {song.year || "-"}
                 </span>
                 <span className="w-14 text-right flex-shrink-0 text-muted-foreground tabular-nums">
                   {formatDuration(song.durationMs)}

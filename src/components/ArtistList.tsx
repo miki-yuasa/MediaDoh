@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { User, Disc3, Play, X } from "lucide-react";
+import { User, Disc3, Play, X, ArrowUp, ArrowDown } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
 import { useQuery } from "@tanstack/react-query";
@@ -95,6 +95,13 @@ export function ArtistList() {
   const [selectedArtist, setSelectedArtist] = useState<ArtistWithAlbums | null>(
     null
   );
+  const [artistSortDirection, setArtistSortDirection] = useState<
+    "asc" | "desc"
+  >("asc");
+  const [albumSortBy, setAlbumSortBy] = useState<"year" | "name">("year");
+  const [albumSortDirection, setAlbumSortDirection] = useState<"asc" | "desc">(
+    "desc"
+  );
 
   const { data: fetchedSongs } = useQuery({
     queryKey: ["songs"],
@@ -119,8 +126,13 @@ export function ArtistList() {
       );
     }
 
-    return songsToArtists(filtered);
-  }, [songs, searchQuery]);
+    const result = songsToArtists(filtered);
+    // Sort by name with direction
+    return result.sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name);
+      return artistSortDirection === "asc" ? cmp : -cmp;
+    });
+  }, [songs, searchQuery, artistSortDirection]);
 
   // Get songs for selected artist
   const artistSongs = useMemo(() => {
@@ -153,6 +165,20 @@ export function ArtistList() {
       console.error("Failed to play artist:", error);
     }
   }, [artistSongs, setQueue, setCurrentSong, setIsPlaying, setIsPaused]);
+
+  // Sorted albums for current artist
+  const sortedAlbums = useMemo(() => {
+    if (!selectedArtist) return [];
+    return [...selectedArtist.albums].sort((a, b) => {
+      let cmp: number;
+      if (albumSortBy === "year") {
+        cmp = (a.year || 0) - (b.year || 0);
+      } else {
+        cmp = a.title.localeCompare(b.title);
+      }
+      return albumSortDirection === "asc" ? cmp : -cmp;
+    });
+  }, [selectedArtist, albumSortBy, albumSortDirection]);
 
   const handlePlaySong = useCallback(
     async (song: Song, index: number) => {
@@ -233,9 +259,60 @@ export function ArtistList() {
           </div>
         </div>
 
+        {/* Album Sort Controls */}
+        <div className="flex items-center gap-4 px-4 py-2 bg-background border-b border-border text-xs">
+          <span className="text-muted-foreground">
+            {t("view.sortBy", "Sort by")}:
+          </span>
+          <button
+            onClick={() => {
+              if (albumSortBy === "year") {
+                setAlbumSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+              } else {
+                setAlbumSortBy("year");
+              }
+            }}
+            className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors ${
+              albumSortBy === "year"
+                ? "text-foreground font-medium"
+                : "text-muted-foreground"
+            }`}
+          >
+            {t("view.columns.year", "Year")}
+            {albumSortBy === "year" &&
+              (albumSortDirection === "asc" ? (
+                <ArrowUp className="w-3 h-3" />
+              ) : (
+                <ArrowDown className="w-3 h-3" />
+              ))}
+          </button>
+          <button
+            onClick={() => {
+              if (albumSortBy === "name") {
+                setAlbumSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+              } else {
+                setAlbumSortBy("name");
+              }
+            }}
+            className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors ${
+              albumSortBy === "name"
+                ? "text-foreground font-medium"
+                : "text-muted-foreground"
+            }`}
+          >
+            {t("view.columns.album", "Name")}
+            {albumSortBy === "name" &&
+              (albumSortDirection === "asc" ? (
+                <ArrowUp className="w-3 h-3" />
+              ) : (
+                <ArrowDown className="w-3 h-3" />
+              ))}
+          </button>
+        </div>
+
         {/* Albums and Songs */}
         <div className="flex-1 overflow-y-auto">
-          {selectedArtist.albums.map((album) => {
+          {sortedAlbums.map((album) => {
             const albumSongs = artistSongs.filter(
               (s) =>
                 `${s.albumArtist || s.artist || ""}-${s.album || ""}` ===
@@ -281,12 +358,15 @@ export function ArtistList() {
                         className="flex items-center gap-3 px-3 py-2 rounded hover:bg-accent cursor-pointer group"
                         onDoubleClick={() => handlePlaySong(song, songIndex)}
                       >
-                        <span className="w-6 text-sm text-muted-foreground text-right tabular-nums">
+                        <span className="w-6 text-sm text-muted-foreground text-right tabular-nums pr-1">
                           {song.trackNumber || "-"}
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="truncate">{song.title}</p>
                         </div>
+                        <span className="text-xs text-muted-foreground tabular-nums w-12 text-center">
+                          {song.year || "-"}
+                        </span>
                         <span className="text-sm text-muted-foreground tabular-nums">
                           {formatDuration(song.durationMs)}
                         </span>
@@ -317,6 +397,22 @@ export function ArtistList() {
   // Artist List View
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Artist Sort Header */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-background-secondary text-xs">
+        <button
+          onClick={() =>
+            setArtistSortDirection((d) => (d === "asc" ? "desc" : "asc"))
+          }
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {t("view.columns.artist", "Artist")}
+          {artistSortDirection === "asc" ? (
+            <ArrowUp className="w-3 h-3" />
+          ) : (
+            <ArrowDown className="w-3 h-3" />
+          )}
+        </button>
+      </div>
       <div className="flex-1 overflow-y-auto">
         {artists.map((artist) => {
           const artworkUrl =

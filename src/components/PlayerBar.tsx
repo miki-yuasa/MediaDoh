@@ -171,17 +171,20 @@ export function PlayerBar() {
       setPosition(newPositionMs);
 
       try {
-        // Seek and ensure playback continues
+        // Always seek - backend will handle playback state
         await seekTo(newPositionMs);
-        // If we were playing, make sure we still are
+
+        // If we're playing, ensure we stay in playing state
         if (isPlaying && !isPaused) {
-          setIsPlaying(true);
+          // Re-fetch player state immediately to sync UI
+          const state = await getPlayerState();
+          setPosition(state.positionMs);
         }
       } catch (error) {
         console.error("Seek error:", error);
       }
     },
-    [currentSong, isPlaying, isPaused, setPosition, setIsPlaying]
+    [currentSong, isPlaying, isPaused, setPosition]
   );
 
   const handleNext = useCallback(() => {
@@ -198,7 +201,81 @@ export function PlayerBar() {
     }
   }, [previousTrack]);
 
-  // Keyboard shortcuts
+  // State for accelerating hold behavior
+  const holdIntervalRef = useRef<number | null>(null);
+  const holdCountRef = useRef(0);
+  const holdStartRef = useRef<number>(0);
+
+  // Calculate interval based on how long button is held (accelerates over time)
+  const getHoldInterval = useCallback(() => {
+    const elapsed = Date.now() - holdStartRef.current;
+    if (elapsed > 2000) return 100; // Fast after 2 seconds
+    if (elapsed > 1000) return 200; // Medium after 1 second
+    return 400; // Slow at first
+  }, []);
+
+  const startHold = useCallback(
+    (action: () => void) => {
+      holdCountRef.current = 0;
+      holdStartRef.current = Date.now();
+
+      const tick = () => {
+        action();
+        holdCountRef.current++;
+        holdIntervalRef.current = window.setTimeout(tick, getHoldInterval());
+      };
+
+      // Start after initial delay
+      holdIntervalRef.current = window.setTimeout(tick, 500);
+    },
+    [getHoldInterval]
+  );
+
+  const stopHold = useCallback(() => {
+    if (holdIntervalRef.current) {
+      clearTimeout(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    }
+    holdCountRef.current = 0;
+  }, []);
+
+  const handleNextMouseDown = useCallback(() => {
+    startHold(handleNext);
+  }, [startHold, handleNext]);
+
+  const handlePrevMouseDown = useCallback(() => {
+    startHold(handlePrevious);
+  }, [startHold, handlePrevious]);
+
+  const handleButtonMouseUp = useCallback(() => {
+    // If we held for some time, don't trigger another action
+    if (holdCountRef.current > 0) {
+      stopHold();
+      return;
+    }
+    stopHold();
+  }, [stopHold]);
+
+  // Clean up hold interval on unmount
+  useEffect(() => {
+    return () => {
+      if (holdIntervalRef.current) {
+        clearTimeout(holdIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Keyboard shortcuts with arrow key support
+  const keyHoldRef = useRef<{
+    key: string;
+    interval: number | null;
+    startTime: number;
+  }>({
+    key: "",
+    interval: null,
+    startTime: 0,
+  });
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input field
@@ -215,15 +292,59 @@ export function PlayerBar() {
           handlePlayPause();
           break;
         case "ArrowRight":
-          if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
+          e.preventDefault();
+          if (
+            !keyHoldRef.current.interval ||
+            keyHoldRef.current.key !== "ArrowRight"
+          ) {
+            // First press or different key
+            if (keyHoldRef.current.interval) {
+              clearInterval(keyHoldRef.current.interval);
+            }
             handleNext();
+            keyHoldRef.current = {
+              key: "ArrowRight",
+              startTime: Date.now(),
+              interval: window.setInterval(() => {
+                const elapsed = Date.now() - keyHoldRef.current.startTime;
+                // Accelerate: more frequent after holding longer
+                if (elapsed > 2000 || elapsed % 100 < 50) {
+                  handleNext();
+                } else if (elapsed > 1000 || elapsed % 200 < 50) {
+                  handleNext();
+                } else if (elapsed % 400 < 50) {
+                  handleNext();
+                }
+              }, 50),
+            };
           }
           break;
         case "ArrowLeft":
-          if (e.metaKey || e.ctrlKey) {
-            e.preventDefault();
+          e.preventDefault();
+          if (
+            !keyHoldRef.current.interval ||
+            keyHoldRef.current.key !== "ArrowLeft"
+          ) {
+            // First press or different key
+            if (keyHoldRef.current.interval) {
+              clearInterval(keyHoldRef.current.interval);
+            }
             handlePrevious();
+            keyHoldRef.current = {
+              key: "ArrowLeft",
+              startTime: Date.now(),
+              interval: window.setInterval(() => {
+                const elapsed = Date.now() - keyHoldRef.current.startTime;
+                // Accelerate: more frequent after holding longer
+                if (elapsed > 2000 || elapsed % 100 < 50) {
+                  handlePrevious();
+                } else if (elapsed > 1000 || elapsed % 200 < 50) {
+                  handlePrevious();
+                } else if (elapsed % 400 < 50) {
+                  handlePrevious();
+                }
+              }, 50),
+            };
           }
           break;
         case "s":
@@ -237,8 +358,24 @@ export function PlayerBar() {
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        if (keyHoldRef.current.interval && keyHoldRef.current.key === e.key) {
+          clearInterval(keyHoldRef.current.interval);
+          keyHoldRef.current = { key: "", interval: null, startTime: 0 };
+        }
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      if (keyHoldRef.current.interval) {
+        clearInterval(keyHoldRef.current.interval);
+      }
+    };
   }, [handlePlayPause, handleNext, handlePrevious, handleStop]);
 
   const cycleRepeatMode = () => {
@@ -301,6 +438,9 @@ export function PlayerBar() {
 
           <button
             onClick={handlePrevious}
+            onMouseDown={handlePrevMouseDown}
+            onMouseUp={handleButtonMouseUp}
+            onMouseLeave={stopHold}
             className="player-button"
             title={t("player.previous")}
           >
@@ -331,6 +471,9 @@ export function PlayerBar() {
 
           <button
             onClick={handleNext}
+            onMouseDown={handleNextMouseDown}
+            onMouseUp={handleButtonMouseUp}
+            onMouseLeave={stopHold}
             className="player-button"
             title={t("player.next")}
           >

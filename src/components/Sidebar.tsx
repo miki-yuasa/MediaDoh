@@ -105,7 +105,7 @@ export function Sidebar() {
       const playlist = await createPlaylist(newPlaylistName.trim());
       setNewPlaylistName("");
       setIsCreatingPlaylist(false);
-      queryClient.invalidateQueries({ queryKey: ["playlists"] });
+      await queryClient.invalidateQueries({ queryKey: ["playlists"] });
       setActiveSection(`playlist-${playlist.id}`);
     } catch (error) {
       console.error("Failed to create playlist:", error);
@@ -122,7 +122,7 @@ export function Sidebar() {
 
       if (selected) {
         const playlist = await importPlaylistM3U(selected as string);
-        queryClient.invalidateQueries({ queryKey: ["playlists"] });
+        await queryClient.invalidateQueries({ queryKey: ["playlists"] });
         setActiveSection(`playlist-${playlist.id}`);
       }
     } catch (error) {
@@ -208,6 +208,13 @@ export function Sidebar() {
                     setIsCreatingPlaylist(false);
                     setNewPlaylistName("");
                   }
+                }}
+                onBlur={() => {
+                  // Delay to allow click on other elements to register
+                  setTimeout(() => {
+                    setIsCreatingPlaylist(false);
+                    setNewPlaylistName("");
+                  }, 150);
                 }}
                 autoFocus
               />
