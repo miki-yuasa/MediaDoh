@@ -124,8 +124,9 @@
 @layer components {
   /* High-density table rows */
   .song-row {
-    @apply flex items-center px-2 py-1 text-sm border-b border-border/50;
+    @apply flex items-center px-2 py-1.5 text-sm border-b border-border/50;
     @apply hover:bg-accent/50 cursor-pointer transition-colors;
+    min-height: 48px;
   }
 
   .song-row.selected {

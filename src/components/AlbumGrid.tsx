@@ -1,12 +1,12 @@
-import { useMemo, useCallback, useEffect } from "react";
+import { useMemo, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Grid, CellComponentProps } from "react-window";
 import { AutoSizer } from "react-virtualized-auto-sizer";
-import { Disc3 } from "lucide-react";
+import { Disc3, X, Play } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
-import { useLibraryStore } from "@/store";
+import { useLibraryStore, usePlayerStore } from "@/store";
 import { useQuery } from "@tanstack/react-query";
-import { getSongs } from "@/api/tauri";
+import { getSongs, playSong } from "@/api/tauri";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Album, Song } from "@/types";
 
@@ -131,6 +131,8 @@ function VirtualCell({
 export function AlbumGrid() {
   const { t } = useTranslation();
   const { songs, setSongs, searchQuery } = useLibraryStore();
+  const { setQueue, setCurrentSong, setIsPlaying } = usePlayerStore();
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
 
   const { data: fetchedSongs } = useQuery({
     queryKey: ["songs"],
@@ -159,9 +161,57 @@ export function AlbumGrid() {
     return songsToAlbums(filtered);
   }, [songs, searchQuery]);
 
+  // Get songs for selected album
+  const albumSongs = useMemo(() => {
+    if (!selectedAlbum) return [];
+    return songs
+      .filter((song) => {
+        const albumKey = `${song.albumArtist || song.artist || ""}-${
+          song.album || ""
+        }`;
+        return albumKey === selectedAlbum.id;
+      })
+      .sort((a, b) => {
+        // Sort by disc number first, then track number
+        const discA = a.discNumber || 1;
+        const discB = b.discNumber || 1;
+        if (discA !== discB) return discA - discB;
+        const trackA = a.trackNumber || 999;
+        const trackB = b.trackNumber || 999;
+        return trackA - trackB;
+      });
+  }, [selectedAlbum, songs]);
+
   const handleAlbumClick = useCallback((album: Album) => {
-    console.log("Album clicked:", album);
+    setSelectedAlbum(album);
   }, []);
+
+  const handlePlayAlbum = useCallback(async () => {
+    if (albumSongs.length === 0) return;
+    setQueue(albumSongs);
+    setCurrentSong(albumSongs[0]);
+    setIsPlaying(true);
+    try {
+      await playSong(albumSongs[0].filePath);
+    } catch (error) {
+      console.error("Failed to play album:", error);
+    }
+  }, [albumSongs, setQueue, setCurrentSong, setIsPlaying]);
+
+  const handlePlaySong = useCallback(
+    async (song: Song, index: number) => {
+      const queue = albumSongs.slice(index);
+      setQueue(queue);
+      setCurrentSong(song);
+      setIsPlaying(true);
+      try {
+        await playSong(song.filePath);
+      } catch (error) {
+        console.error("Failed to play song:", error);
+      }
+    },
+    [albumSongs, setQueue, setCurrentSong, setIsPlaying]
+  );
 
   if (songs.length === 0) {
     return (
@@ -169,6 +219,107 @@ export function AlbumGrid() {
         <Disc3 className="w-16 h-16 text-muted-foreground/50 mb-4" />
         <h2 className="text-lg font-medium mb-2">{t("library.noSongs")}</h2>
         <p className="text-sm text-muted-foreground">{t("library.addMusic")}</p>
+      </div>
+    );
+  }
+
+  // Album Detail View
+  if (selectedAlbum) {
+    const artworkUrl = selectedAlbum.artCachePath
+      ? convertFileSrc(selectedAlbum.artCachePath)
+      : null;
+
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Album Header */}
+        <div className="flex items-start gap-6 p-6 bg-background-secondary border-b border-border">
+          {/* Album Art */}
+          <div className="w-48 h-48 flex-shrink-0 rounded-lg overflow-hidden bg-muted shadow-lg">
+            {artworkUrl ? (
+              <img
+                src={artworkUrl}
+                alt={selectedAlbum.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Disc3 className="w-16 h-16 text-muted-foreground/50" />
+              </div>
+            )}
+          </div>
+
+          {/* Album Info */}
+          <div className="flex-1 min-w-0">
+            <button
+              onClick={() => setSelectedAlbum(null)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+            >
+              <X className="w-3 h-3" />
+              {t("common.back", "Back to albums")}
+            </button>
+            <h1 className="text-2xl font-bold truncate mb-1">
+              {selectedAlbum.title}
+            </h1>
+            <p className="text-lg text-muted-foreground truncate mb-1">
+              {selectedAlbum.albumArtist ||
+                selectedAlbum.artist ||
+                t("common.unknownArtist", "Unknown Artist")}
+            </p>
+            <p className="text-sm text-muted-foreground mb-4">
+              {selectedAlbum.year && `${selectedAlbum.year} • `}
+              {selectedAlbum.trackCount} {t("library.tracks", "tracks")} •{" "}
+              {formatDuration(selectedAlbum.totalDurationMs)}
+            </p>
+            <button
+              onClick={handlePlayAlbum}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 transition-colors"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              {t("player.play", "Play")}
+            </button>
+          </div>
+        </div>
+
+        {/* Song List */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-4 py-2">
+            {albumSongs.map((song, index) => (
+              <div
+                key={song.id}
+                className="flex items-center gap-3 px-3 py-2 rounded hover:bg-accent cursor-pointer group"
+                onDoubleClick={() => handlePlaySong(song, index)}
+              >
+                <span className="w-6 text-sm text-muted-foreground text-right tabular-nums">
+                  {song.trackNumber || "-"}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="truncate">{song.title}</p>
+                  {song.artist !== selectedAlbum.albumArtist &&
+                    song.artist !== selectedAlbum.artist && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {song.artist}
+                      </p>
+                    )}
+                </div>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  {formatDuration(song.durationMs)}
+                </span>
+                <button
+                  onClick={() => handlePlaySong(song, index)}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-primary/20 rounded transition-all"
+                >
+                  <Play className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Status Bar */}
+        <div className="px-3 py-1.5 border-t border-border bg-background-secondary text-xs text-muted-foreground">
+          {albumSongs.length} {t("library.tracks", "tracks")} •{" "}
+          {formatDuration(selectedAlbum.totalDurationMs)}
+        </div>
       </div>
     );
   }

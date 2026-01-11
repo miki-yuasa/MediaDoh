@@ -68,6 +68,8 @@ pub struct OneDriveAudioMetadata {
     pub bitrate: Option<u32>,
     /// Thumbnail/album art URL from OneDrive
     pub thumbnail_url: Option<String>,
+    /// Base64 data URI for embedded artwork extracted via Range requests
+    pub artwork_data: Option<String>,
 }
 
 /// OneDrive file info from Graph API
@@ -733,6 +735,31 @@ impl OneDriveClient {
             .primary_tag()
             .or_else(|| tagged_file.first_tag());
 
+        // Extract artwork as base64 data URI
+        let artwork_data = tag.and_then(|t| {
+            use base64::{engine::general_purpose::STANDARD, Engine as _};
+            use lofty::picture::PictureType;
+
+            let pictures = t.pictures();
+            if pictures.is_empty() {
+                return None;
+            }
+
+            // Prefer CoverFront, fall back to first available
+            let picture = pictures
+                .iter()
+                .find(|p| p.pic_type() == PictureType::CoverFront)
+                .or_else(|| pictures.first())?;
+
+            let mime_type = picture
+                .mime_type()
+                .map(|m| m.as_str())
+                .unwrap_or("image/jpeg");
+            let base64_data = STANDARD.encode(picture.data());
+
+            Some(format!("data:{};base64,{}", mime_type, base64_data))
+        });
+
         let metadata = OneDriveAudioMetadata {
             title: tag
                 .and_then(|t| t.title().map(|s| s.to_string()))
@@ -760,6 +787,7 @@ impl OneDriveClient {
                 .ok(),
             bitrate: tagged_file.properties().audio_bitrate(),
             thumbnail_url: None, // Will be set by get_file_metadata_with_fallback
+            artwork_data,
         };
 
         Ok(metadata)
@@ -905,6 +933,7 @@ impl OneDriveClient {
                         duration_ms: None,
                         bitrate: None,
                         thumbnail_url: None,
+                        artwork_data: None,
                     });
                 }
             }
@@ -963,6 +992,7 @@ impl OneDriveClient {
                         duration_ms: None,
                         bitrate: None,
                         thumbnail_url: None,
+                        artwork_data: None,
                     },
                 ));
             }
@@ -1117,6 +1147,7 @@ pub fn graph_metadata_to_audio(info: &OneDriveFileInfo) -> OneDriveAudioMetadata
         duration_ms: audio.and_then(|a| a.duration),
         bitrate: audio.and_then(|a| a.bitrate),
         thumbnail_url: None, // Set separately via get_thumbnail_url
+        artwork_data: None,  // Set via Range request parsing
     }
 }
 

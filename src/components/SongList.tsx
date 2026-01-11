@@ -13,7 +13,10 @@ import {
   Play,
   ListPlus,
   Save,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn, formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,10 +28,10 @@ import {
 } from "@/api/tauri";
 import type { Song, SongGroup } from "@/types";
 
-const ROW_HEIGHT = 32;
+const ROW_HEIGHT = 32; // Standard row height
 
 interface SongRowData {
-  items: Array<{ song: Song; showAlbumArt: boolean }>;
+  items: Array<{ song: Song; showAlbumArt: boolean; isFirstOfAlbum: boolean }>;
   selectedSongIds: Set<string>;
   currentSongId: string | null;
   onSongClick: (e: React.MouseEvent, songId: string) => void;
@@ -41,6 +44,7 @@ interface SongRowData {
 interface SongRowProps {
   song: Song;
   showAlbumArt: boolean;
+  isFirstOfAlbum: boolean;
   isSelected: boolean;
   isPlaying: boolean;
   onClick: (e: React.MouseEvent) => void;
@@ -53,6 +57,7 @@ interface SongRowProps {
 function SongRow({
   song,
   showAlbumArt,
+  isFirstOfAlbum,
   isSelected,
   isPlaying,
   onClick,
@@ -72,6 +77,11 @@ function SongRow({
     }
   };
 
+  // Get artwork source - prefer artworkData (base64), fall back to artCachePath
+  const artworkSrc =
+    song.artworkData ||
+    (song.artCachePath ? convertFileSrc(song.artCachePath) : null);
+
   return (
     <div
       className={cn(
@@ -85,17 +95,21 @@ function SongRow({
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
     >
-      <div className="w-8 flex-shrink-0">
-        {showAlbumArt ? (
-          <div className="w-6 h-6 bg-muted rounded flex items-center justify-center">
-            {song.hasEmbeddedArt && song.artCachePath ? (
+      {/* Album artwork column - spans 2 rows visually */}
+      <div className="w-16 flex-shrink-0 flex items-center justify-center relative">
+        {isFirstOfAlbum && showAlbumArt ? (
+          <div
+            className="absolute w-14 h-14 bg-muted rounded flex items-center justify-center overflow-hidden shadow-sm"
+            style={{ top: "-7px" }} // Position to span 2 rows
+          >
+            {artworkSrc ? (
               <img
-                src={song.artCachePath}
+                src={artworkSrc}
                 alt=""
-                className="w-full h-full object-cover rounded"
+                className="w-full h-full object-cover"
               />
             ) : (
-              <Music className="w-3 h-3 text-muted-foreground" />
+              <Music className="w-6 h-6 text-muted-foreground" />
             )}
           </div>
         ) : null}
@@ -174,7 +188,7 @@ function VirtualRow({
   const item = rowProps.items[index];
   if (!item) return <div style={style} />;
 
-  const { song, showAlbumArt } = item;
+  const { song, showAlbumArt, isFirstOfAlbum } = item;
   const isSelected = rowProps.selectedSongIds.has(song.id);
   const isPlaying = rowProps.currentSongId === song.id;
 
@@ -183,6 +197,7 @@ function VirtualRow({
       <SongRow
         song={song}
         showAlbumArt={showAlbumArt}
+        isFirstOfAlbum={isFirstOfAlbum}
         isSelected={isSelected}
         isPlaying={isPlaying}
         onClick={(e) => rowProps.onSongClick(e, song.id)}
@@ -209,8 +224,32 @@ export function SongList() {
     searchQuery,
   } = useLibraryStore();
 
-  const { currentSong, setQueue, setCurrentSong, setIsPlaying } =
+  const { currentSong, setQueue, setCurrentSong, setIsPlaying, setIsPaused } =
     usePlayerStore();
+
+  // Sorting state
+  type SortColumn =
+    | "title"
+    | "artist"
+    | "album"
+    | "duration"
+    | "format"
+    | "trackNumber"
+    | null;
+  const [sortColumn, setSortColumn] = useState<SortColumn>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const handleColumnSort = useCallback((column: SortColumn) => {
+    setSortColumn((prev) => {
+      if (prev === column) {
+        // Toggle direction or clear if already desc
+        setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+        return column;
+      }
+      setSortDirection("asc");
+      return column;
+    });
+  }, []);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -266,29 +305,64 @@ export function SongList() {
       );
     }
 
-    // Always sort by album artist, album, then track number to keep songs in same album together
-    // This groups songs by album and orders them by track number within each album
-    result.sort((a, b) => {
-      // First, sort by album artist (or artist if not set)
-      const aAlbumArtist = (a.albumArtist || a.artist || "").toLowerCase();
-      const bAlbumArtist = (b.albumArtist || b.artist || "").toLowerCase();
-      const albumArtistComparison = aAlbumArtist.localeCompare(bAlbumArtist);
-      if (albumArtistComparison !== 0) return albumArtistComparison;
+    // Apply column sorting if a column is selected
+    if (sortColumn) {
+      result.sort((a, b) => {
+        let comparison = 0;
+        const multiplier = sortDirection === "asc" ? 1 : -1;
 
-      // Then, sort by album name
-      const aAlbum = (a.album || "").toLowerCase();
-      const bAlbum = (b.album || "").toLowerCase();
-      const albumComparison = aAlbum.localeCompare(bAlbum);
-      if (albumComparison !== 0) return albumComparison;
+        switch (sortColumn) {
+          case "title":
+            comparison = a.title
+              .toLowerCase()
+              .localeCompare(b.title.toLowerCase());
+            break;
+          case "artist":
+            comparison = (a.artist || "")
+              .toLowerCase()
+              .localeCompare((b.artist || "").toLowerCase());
+            break;
+          case "album":
+            comparison = (a.album || "")
+              .toLowerCase()
+              .localeCompare((b.album || "").toLowerCase());
+            break;
+          case "duration":
+            comparison = (a.durationMs || 0) - (b.durationMs || 0);
+            break;
+          case "format":
+            comparison = a.format.localeCompare(b.format);
+            break;
+          case "trackNumber":
+            comparison = (a.trackNumber || 999) - (b.trackNumber || 999);
+            break;
+        }
+        return comparison * multiplier;
+      });
+    } else {
+      // Default: sort by album artist, album, then track number to keep songs in same album together
+      result.sort((a, b) => {
+        // First, sort by album artist (or artist if not set)
+        const aAlbumArtist = (a.albumArtist || a.artist || "").toLowerCase();
+        const bAlbumArtist = (b.albumArtist || b.artist || "").toLowerCase();
+        const albumArtistComparison = aAlbumArtist.localeCompare(bAlbumArtist);
+        if (albumArtistComparison !== 0) return albumArtistComparison;
 
-      // Finally, sort by track number within the same album
-      const aTrack = a.trackNumber || 999;
-      const bTrack = b.trackNumber || 999;
-      return aTrack - bTrack;
-    });
+        // Then, sort by album name
+        const aAlbum = (a.album || "").toLowerCase();
+        const bAlbum = (b.album || "").toLowerCase();
+        const albumComparison = aAlbum.localeCompare(bAlbum);
+        if (albumComparison !== 0) return albumComparison;
+
+        // Finally, sort by track number within the same album
+        const aTrack = a.trackNumber || 999;
+        const bTrack = b.trackNumber || 999;
+        return aTrack - bTrack;
+      });
+    }
 
     return result;
-  }, [songs, searchQuery]);
+  }, [songs, searchQuery, sortColumn, sortDirection]);
 
   const songGroups = useMemo(
     () => groupSongsByAlbum(filteredSongs),
@@ -296,13 +370,18 @@ export function SongList() {
   );
 
   const flattenedList = useMemo(() => {
-    const items: Array<{ song: Song; showAlbumArt: boolean }> = [];
+    const items: Array<{
+      song: Song;
+      showAlbumArt: boolean;
+      isFirstOfAlbum: boolean;
+    }> = [];
 
     for (const group of songGroups) {
       group.songs.forEach((song, index) => {
         items.push({
           song,
           showAlbumArt: index === 0,
+          isFirstOfAlbum: index === 0,
         });
       });
     }
@@ -376,6 +455,7 @@ export function SongList() {
       setQueue(queue);
       setCurrentSong(queue[0]);
       setIsPlaying(true);
+      setIsPaused(false);
 
       try {
         await playSong(song.filePath);
@@ -383,7 +463,7 @@ export function SongList() {
         console.error("Failed to play song:", error);
       }
     },
-    [filteredSongs, setQueue, setCurrentSong, setIsPlaying]
+    [filteredSongs, setQueue, setCurrentSong, setIsPlaying, setIsPaused]
   );
 
   const handleDeleteSelected = useCallback(async () => {
@@ -432,6 +512,7 @@ export function SongList() {
       setQueue(queue);
       setCurrentSong(queue[0]);
       setIsPlaying(true);
+      setIsPaused(false);
       try {
         await playSong(song.filePath);
       } catch (error) {
@@ -439,7 +520,7 @@ export function SongList() {
       }
       setContextMenu(null);
     },
-    [filteredSongs, setQueue, setCurrentSong, setIsPlaying]
+    [filteredSongs, setQueue, setCurrentSong, setIsPlaying, setIsPaused]
   );
 
   const handleViewMetadata = useCallback((song: Song) => {
@@ -476,6 +557,40 @@ export function SongList() {
     ]
   );
 
+  // Sortable column header component
+  const SortableHeader = ({
+    column,
+    label,
+    className,
+  }: {
+    column:
+      | "title"
+      | "artist"
+      | "album"
+      | "duration"
+      | "format"
+      | "trackNumber";
+    label: string;
+    className?: string;
+  }) => (
+    <button
+      onClick={() => handleColumnSort(column)}
+      className={cn(
+        "flex items-center gap-1 hover:text-foreground transition-colors",
+        sortColumn === column && "text-foreground",
+        className
+      )}
+    >
+      {label}
+      {sortColumn === column &&
+        (sortDirection === "asc" ? (
+          <ArrowUp className="w-3 h-3" />
+        ) : (
+          <ArrowDown className="w-3 h-3" />
+        ))}
+    </button>
+  );
+
   if (songs.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
@@ -490,16 +605,27 @@ export function SongList() {
     <div className="flex-1 flex flex-col">
       {/* Header */}
       <div className="flex items-center px-2 py-1.5 border-b border-border bg-background-secondary text-xs font-medium text-muted-foreground">
-        <span className="w-8 flex-shrink-0" />
-        <span className="w-8 text-right flex-shrink-0">#</span>
-        <span className="flex-1 px-2">{t("view.columns.title")}</span>
-        <span className="w-40 px-2">{t("view.columns.artist")}</span>
-        <span className="w-40 px-2">{t("view.columns.album")}</span>
-        <span className="w-14 text-right flex-shrink-0">
-          {t("view.columns.duration")}
+        <span className="w-16 flex-shrink-0" />
+        <span className="w-8 text-right flex-shrink-0">
+          <SortableHeader column="trackNumber" label="#" />
         </span>
-        <span className="w-12 text-center flex-shrink-0">
-          {t("view.columns.format")}
+        <span className="flex-1 px-2">
+          <SortableHeader column="title" label={t("view.columns.title")} />
+        </span>
+        <span className="w-40 px-2">
+          <SortableHeader column="artist" label={t("view.columns.artist")} />
+        </span>
+        <span className="w-40 px-2">
+          <SortableHeader column="album" label={t("view.columns.album")} />
+        </span>
+        <span className="w-14 flex-shrink-0 flex justify-end">
+          <SortableHeader
+            column="duration"
+            label={t("view.columns.duration")}
+          />
+        </span>
+        <span className="w-12 flex-shrink-0 flex justify-center">
+          <SortableHeader column="format" label={t("view.columns.format")} />
         </span>
         <span className="w-6 text-center flex-shrink-0">
           {t("view.columns.syncStatus")}

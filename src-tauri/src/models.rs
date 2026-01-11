@@ -122,6 +122,8 @@ pub struct Song {
     // Album art
     pub has_embedded_art: bool,
     pub art_cache_path: Option<PathBuf>,
+    /// Base64 data URI for album art (e.g., "data:image/jpeg;base64,...")
+    pub artwork_data: Option<String>,
 
     // Timestamps
     pub date_added: DateTime<Utc>,

@@ -70,6 +70,8 @@ export interface Song {
   // Album art
   hasEmbeddedArt: boolean;
   artCachePath: string | null;
+  /** Base64 data URI for album art (e.g., "data:image/jpeg;base64,...") */
+  artworkData: string | null;
 
   // Timestamps
   dateAdded: string;

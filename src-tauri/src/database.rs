@@ -80,6 +80,7 @@ fn get_migration_statements() -> Vec<String> {
             is_lossless INTEGER NOT NULL DEFAULT 0,
             has_embedded_art INTEGER NOT NULL DEFAULT 0,
             art_cache_path TEXT,
+            artwork_data TEXT,
             date_added TEXT NOT NULL,
             date_modified TEXT NOT NULL,
             last_played TEXT,
@@ -197,6 +198,9 @@ fn get_migration_statements() -> Vec<String> {
         "CREATE INDEX IF NOT EXISTS idx_playlist_entries_song ON playlist_entries(song_id)".to_string(),
         "CREATE INDEX IF NOT EXISTS idx_sync_history_device ON sync_history(device_id)".to_string(),
         "CREATE INDEX IF NOT EXISTS idx_sync_history_timestamp ON sync_history(timestamp)".to_string(),
+        
+        // Migration: Add artwork_data column to existing databases
+        "ALTER TABLE songs ADD COLUMN artwork_data TEXT".to_string(),
         
         // FTS5 virtual table for full-text search
         r#"CREATE VIRTUAL TABLE IF NOT EXISTS songs_fts USING fts5(

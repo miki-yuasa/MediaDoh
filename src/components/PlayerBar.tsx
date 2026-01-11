@@ -132,10 +132,13 @@ export function PlayerBar() {
       <div className="flex items-center gap-3 w-64 min-w-0">
         {currentSong ? (
           <>
-            <div className="w-12 h-12 bg-muted rounded flex-shrink-0 flex items-center justify-center">
-              {currentSong.artCachePath ? (
+            <div className="w-12 h-12 bg-muted rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
+              {currentSong.artworkData || currentSong.artCachePath ? (
                 <img
-                  src={convertFileSrc(currentSong.artCachePath)}
+                  src={
+                    currentSong.artworkData ||
+                    convertFileSrc(currentSong.artCachePath!)
+                  }
                   alt={currentSong.album || ""}
                   className="w-full h-full object-cover rounded"
                 />

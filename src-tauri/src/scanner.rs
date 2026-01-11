@@ -47,7 +47,38 @@ fn get_artwork_cache_dir() -> Result<PathBuf> {
     Ok(cache_dir)
 }
 
-/// Extract and cache album artwork from audio file
+/// Extract album artwork from audio file as base64 data URI
+/// Looks for CoverFront picture type first, then falls back to first available picture
+fn extract_artwork_as_base64(path: &Path) -> Option<String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use lofty::picture::PictureType;
+
+    let tagged_file = Probe::open(path).ok()?.read().ok()?;
+    let tag = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag())?;
+
+    let pictures = tag.pictures();
+    if pictures.is_empty() {
+        return None;
+    }
+
+    // Prefer CoverFront, fall back to first available
+    let picture = pictures
+        .iter()
+        .find(|p| p.pic_type() == PictureType::CoverFront)
+        .or_else(|| pictures.first())?;
+
+    let mime_type = picture
+        .mime_type()
+        .map(|m| m.as_str())
+        .unwrap_or("image/jpeg");
+    let base64_data = STANDARD.encode(picture.data());
+
+    Some(format!("data:{};base64,{}", mime_type, base64_data))
+}
+
+/// Extract and cache album artwork from audio file (legacy - for file caching)
 fn extract_and_cache_artwork(path: &Path, album_key: &str) -> Option<PathBuf> {
     let cache_dir = get_artwork_cache_dir().ok()?;
 
@@ -364,6 +395,10 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
         (false, None)
     };
 
+    // Use artwork_data from metadata if available (extracted via Range request)
+    let artwork_data = metadata.artwork_data.clone();
+    let has_embedded_art = has_art || artwork_data.is_some();
+
     // Use title from metadata, falling back to file name without extension
     let title = metadata.title.clone().unwrap_or_else(|| {
         path.file_stem()
@@ -396,8 +431,9 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
         channels: None,
         format,
         is_lossless,
-        has_embedded_art: has_art,
+        has_embedded_art,
         art_cache_path,
+        artwork_data,
         date_added: now,
         date_modified: now,
         last_played: None,
@@ -552,7 +588,14 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
     // Check for embedded album art and extract it
     let has_embedded_art = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
 
-    // Extract and cache artwork if available
+    // Extract artwork as base64 data URI
+    let artwork_data = if has_embedded_art {
+        extract_artwork_as_base64(&path)
+    } else {
+        None
+    };
+
+    // Also cache to file for legacy support
     let art_cache_path = if has_embedded_art {
         let album_key = format!(
             "{}-{}",
@@ -595,6 +638,7 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
         is_lossless,
         has_embedded_art,
         art_cache_path,
+        artwork_data,
         date_added: now,
         date_modified: now,
         last_played: None,
@@ -663,7 +707,7 @@ async fn insert_song(pool: &DbPool, song: &Song) -> Result<()> {
             title, artist, album_artist, album, track_number, track_total,
             disc_number, disc_total, year, genre, composer,
             duration_ms, sample_rate, bit_depth, bitrate, channels, format, is_lossless,
-            has_embedded_art, art_cache_path,
+            has_embedded_art, art_cache_path, artwork_data,
             date_added, date_modified, last_played, play_count,
             sync_status, synced_to_device, synced_at, rating, search_text
         ) VALUES (
@@ -671,7 +715,7 @@ async fn insert_song(pool: &DbPool, song: &Song) -> Result<()> {
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?,
-            ?, ?,
+            ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?, ?
         )
@@ -706,6 +750,7 @@ async fn insert_song(pool: &DbPool, song: &Song) -> Result<()> {
             .as_ref()
             .map(|p| p.to_string_lossy().to_string()),
     )
+    .bind(&song.artwork_data)
     .bind(&date_added)
     .bind(&date_modified)
     .bind::<Option<String>>(None)
@@ -760,6 +805,7 @@ struct SongRow {
     is_lossless: i32,
     has_embedded_art: i32,
     art_cache_path: Option<String>,
+    artwork_data: Option<String>,
     date_added: String,
     date_modified: String,
     last_played: Option<String>,
@@ -800,6 +846,7 @@ impl From<SongRow> for Song {
             is_lossless: row.is_lossless != 0,
             has_embedded_art: row.has_embedded_art != 0,
             art_cache_path: row.art_cache_path.map(PathBuf::from),
+            artwork_data: row.artwork_data,
             date_added: chrono::DateTime::parse_from_rfc3339(&row.date_added)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
