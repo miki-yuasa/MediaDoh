@@ -19,7 +19,6 @@ use onedrive::OneDriveClient;
 use player::AudioPlayer;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
-use tokio::sync::RwLock;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -104,6 +103,7 @@ pub fn run() {
             commands::pause,
             commands::resume,
             commands::stop,
+            commands::seek_to,
             commands::set_volume,
             commands::get_player_state,
             commands::set_repeat_mode,
@@ -132,6 +132,18 @@ pub fn run() {
             commands::onedrive_disconnect,
             commands::onedrive_set_client_id,
             commands::onedrive_get_client_id,
+            // Playlist commands
+            commands::get_playlists,
+            commands::create_playlist,
+            commands::update_playlist,
+            commands::delete_playlist,
+            commands::get_playlist_songs,
+            commands::add_song_to_playlist,
+            commands::add_songs_to_playlist,
+            commands::remove_song_from_playlist,
+            commands::reorder_playlist_songs,
+            commands::export_playlist_m3u,
+            commands::import_playlist_m3u,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Music,
@@ -10,11 +10,19 @@ import {
   Smartphone,
   ChevronLeft,
   ChevronRight,
+  ListMusic,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore, useDeviceStore } from "@/store";
-import { useQuery } from "@tanstack/react-query";
-import { getDevices } from "@/api/tauri";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getDevices,
+  getPlaylists,
+  createPlaylist,
+  importPlaylistM3U,
+} from "@/api/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -64,12 +72,21 @@ export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, activeSection, setActiveSection } =
     useUIStore();
   const { setDevices } = useDeviceStore();
+  const queryClient = useQueryClient();
+  const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
 
   // Query devices
   const { data: fetchedDevices } = useQuery({
     queryKey: ["devices"],
     queryFn: getDevices,
     refetchInterval: 5000, // Poll every 5 seconds
+  });
+
+  // Query playlists
+  const { data: playlists } = useQuery({
+    queryKey: ["playlists"],
+    queryFn: getPlaylists,
   });
 
   // Update store when devices are fetched
@@ -80,6 +97,38 @@ export function Sidebar() {
   }, [fetchedDevices, setDevices]);
 
   const devices = fetchedDevices || [];
+
+  const handleCreatePlaylist = async () => {
+    if (!newPlaylistName.trim()) return;
+
+    try {
+      const playlist = await createPlaylist(newPlaylistName.trim());
+      setNewPlaylistName("");
+      setIsCreatingPlaylist(false);
+      queryClient.invalidateQueries({ queryKey: ["playlists"] });
+      setActiveSection(`playlist-${playlist.id}`);
+    } catch (error) {
+      console.error("Failed to create playlist:", error);
+    }
+  };
+
+  const handleImportM3U = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "M3U Playlist", extensions: ["m3u", "m3u8"] }],
+        title: t("playlist.importM3U"),
+      });
+
+      if (selected) {
+        const playlist = await importPlaylistM3U(selected as string);
+        queryClient.invalidateQueries({ queryKey: ["playlists"] });
+        setActiveSection(`playlist-${playlist.id}`);
+      }
+    } catch (error) {
+      console.error("Failed to import M3U:", error);
+    }
+  };
 
   return (
     <aside
@@ -138,10 +187,41 @@ export function Sidebar() {
           <SidebarItem
             icon={<Plus className="w-4 h-4" />}
             label={t("sidebar.newPlaylist")}
-            onClick={() => {
-              // TODO: Open create playlist dialog
-            }}
+            onClick={() => setIsCreatingPlaylist(true)}
           />
+          <SidebarItem
+            icon={<Upload className="w-4 h-4" />}
+            label={t("playlist.importM3U")}
+            onClick={handleImportM3U}
+          />
+          {isCreatingPlaylist && !sidebarCollapsed && (
+            <div className="px-3 py-1">
+              <input
+                type="text"
+                className="w-full px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder={t("playlist.namePlaceholder", "Playlist name")}
+                value={newPlaylistName}
+                onChange={(e) => setNewPlaylistName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreatePlaylist();
+                  if (e.key === "Escape") {
+                    setIsCreatingPlaylist(false);
+                    setNewPlaylistName("");
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+          )}
+          {playlists?.map((playlist) => (
+            <SidebarItem
+              key={playlist.id}
+              icon={<ListMusic className="w-4 h-4" />}
+              label={playlist.name}
+              active={activeSection === `playlist-${playlist.id}`}
+              onClick={() => setActiveSection(`playlist-${playlist.id}`)}
+            />
+          ))}
         </SidebarSection>
 
         {/* Devices Section */}

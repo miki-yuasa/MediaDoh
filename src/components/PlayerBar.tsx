@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Play,
   Pause,
   SkipBack,
   SkipForward,
+  Square,
   Volume2,
   VolumeX,
   Repeat,
@@ -17,8 +18,10 @@ import {
   playSong,
   pause,
   resume,
+  stop,
   setVolume,
   getPlayerState,
+  seekTo,
 } from "@/api/tauri";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -45,18 +48,60 @@ export function PlayerBar() {
   } = usePlayerStore();
 
   const intervalRef = useRef<number | null>(null);
+  const isHandlingTrackEndRef = useRef(false);
 
-  // Poll player state for position updates
+  // Handle track end - check for repeat mode
+  const handleTrackEnd = useCallback(async () => {
+    if (isHandlingTrackEndRef.current) return;
+    isHandlingTrackEndRef.current = true;
+
+    try {
+      if (repeatMode === "one" && currentSong) {
+        // Repeat current song
+        setPosition(0);
+        await playSong(currentSong.filePath);
+      } else {
+        // Try to go to next track (handles repeat all in nextTrack)
+        const next = nextTrack();
+        if (next) {
+          await playSong(next.filePath);
+        } else {
+          // No more tracks, stop playback
+          setIsPlaying(false);
+          setIsPaused(false);
+          setPosition(0);
+        }
+      }
+    } catch (error) {
+      console.error("Error handling track end:", error);
+    } finally {
+      isHandlingTrackEndRef.current = false;
+    }
+  }, [
+    repeatMode,
+    currentSong,
+    nextTrack,
+    setPosition,
+    setIsPlaying,
+    setIsPaused,
+  ]);
+
+  // Poll player state for position updates and track end detection
   useEffect(() => {
     if (isPlaying && !isPaused) {
       intervalRef.current = window.setInterval(async () => {
         try {
           const state = await getPlayerState();
           setPosition(state.positionMs);
+
+          // Check if track has ended (position at or past duration with small buffer)
+          if (currentSong && state.positionMs >= currentSong.durationMs - 500) {
+            handleTrackEnd();
+          }
         } catch (error) {
           console.error("Failed to get player state:", error);
         }
-      }, 500); // Update every 500ms
+      }, 250); // Update every 250ms for more responsive track end detection
     } else {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -69,9 +114,9 @@ export function PlayerBar() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isPlaying, isPaused, setPosition]);
+  }, [isPlaying, isPaused, currentSong, setPosition, handleTrackEnd]);
 
-  const handlePlayPause = async () => {
+  const handlePlayPause = useCallback(async () => {
     if (!currentSong) return;
 
     try {
@@ -89,7 +134,18 @@ export function PlayerBar() {
     } catch (error) {
       console.error("Playback error:", error);
     }
-  };
+  }, [currentSong, isPlaying, isPaused, setIsPlaying, setIsPaused]);
+
+  const handleStop = useCallback(async () => {
+    try {
+      await stop();
+      setIsPlaying(false);
+      setIsPaused(false);
+      setPosition(0);
+    } catch (error) {
+      console.error("Stop error:", error);
+    }
+  }, [setIsPlaying, setIsPaused, setPosition]);
 
   const handleVolumeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
@@ -101,19 +157,89 @@ export function PlayerBar() {
     }
   };
 
-  const handleNext = () => {
+  const handleSeek = useCallback(
+    async (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!currentSong) return;
+
+      const progressBar = e.currentTarget;
+      const rect = progressBar.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+      const newPositionMs = Math.floor(percentage * currentSong.durationMs);
+
+      // Optimistically update position immediately
+      setPosition(newPositionMs);
+
+      try {
+        // Seek and ensure playback continues
+        await seekTo(newPositionMs);
+        // If we were playing, make sure we still are
+        if (isPlaying && !isPaused) {
+          setIsPlaying(true);
+        }
+      } catch (error) {
+        console.error("Seek error:", error);
+      }
+    },
+    [currentSong, isPlaying, isPaused, setPosition, setIsPlaying]
+  );
+
+  const handleNext = useCallback(() => {
     const next = nextTrack();
     if (next) {
       playSong(next.filePath).catch(console.error);
     }
-  };
+  }, [nextTrack]);
 
-  const handlePrevious = () => {
+  const handlePrevious = useCallback(() => {
     const prev = previousTrack();
     if (prev) {
       playSong(prev.filePath).catch(console.error);
     }
-  };
+  }, [previousTrack]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input field
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      switch (e.key) {
+        case " ":
+          e.preventDefault();
+          handlePlayPause();
+          break;
+        case "ArrowRight":
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            handleNext();
+          }
+          break;
+        case "ArrowLeft":
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            handlePrevious();
+          }
+          break;
+        case "s":
+          if (e.metaKey || e.ctrlKey) {
+            // Don't capture Cmd+S for stop, it's used for save
+          } else {
+            e.preventDefault();
+            handleStop();
+          }
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handlePlayPause, handleNext, handlePrevious, handleStop]);
 
   const cycleRepeatMode = () => {
     const modes: Array<"off" | "all" | "one"> = ["off", "all", "one"];
@@ -167,7 +293,7 @@ export function PlayerBar() {
         <div className="flex items-center gap-2">
           <button
             onClick={toggleShuffle}
-            className={cn("player-button", shuffle && "text-primary")}
+            className={cn("player-button", shuffle && "active")}
             title={t("player.shuffle")}
           >
             <Shuffle className="w-4 h-4" />
@@ -183,7 +309,7 @@ export function PlayerBar() {
 
           <button
             onClick={handlePlayPause}
-            className="player-button primary w-10 h-10"
+            className="player-button primary w-10 h-10 flex items-center justify-center"
             title={
               isPlaying && !isPaused ? t("player.pause") : t("player.play")
             }
@@ -191,8 +317,16 @@ export function PlayerBar() {
             {isPlaying && !isPaused ? (
               <Pause className="w-5 h-5" />
             ) : (
-              <Play className="w-5 h-5 ml-0.5" />
+              <Play className="w-5 h-5" />
             )}
+          </button>
+
+          <button
+            onClick={handleStop}
+            className="player-button"
+            title={t("player.stop")}
+          >
+            <Square className="w-4 h-4" />
           </button>
 
           <button
@@ -205,10 +339,7 @@ export function PlayerBar() {
 
           <button
             onClick={cycleRepeatMode}
-            className={cn(
-              "player-button",
-              repeatMode !== "off" && "text-primary"
-            )}
+            className={cn("player-button", repeatMode !== "off" && "active")}
             title={
               repeatMode === "one"
                 ? t("player.repeatOne")
@@ -230,7 +361,15 @@ export function PlayerBar() {
           <span className="text-xs duration w-10 text-right">
             {formatDuration(positionMs)}
           </span>
-          <div className="flex-1 progress-bar">
+          <div
+            className="flex-1 progress-bar"
+            onClick={handleSeek}
+            role="slider"
+            aria-valuemin={0}
+            aria-valuemax={currentSong?.durationMs || 0}
+            aria-valuenow={positionMs}
+            tabIndex={0}
+          >
             <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
           <span className="text-xs duration w-10">

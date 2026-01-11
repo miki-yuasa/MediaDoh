@@ -99,6 +99,8 @@ export interface Album {
   trackCount: number;
   totalDurationMs: number;
   artCachePath: string | null;
+  /** Base64 data URI for album art */
+  artworkData?: string | null;
   dateAdded: string;
 }
 

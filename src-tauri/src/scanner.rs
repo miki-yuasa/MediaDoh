@@ -870,3 +870,18 @@ impl From<SongRow> for Song {
         }
     }
 }
+
+/// Get songs in a playlist (ordered by position)
+pub async fn get_playlist_songs_from_db(pool: &DbPool, playlist_id: &str) -> Result<Vec<Song>> {
+    let rows = sqlx::query_as::<_, SongRow>(
+        r#"SELECT s.* FROM songs s
+           INNER JOIN playlist_entries pe ON s.id = pe.song_id
+           WHERE pe.playlist_id = ?
+           ORDER BY pe.position"#,
+    )
+    .bind(playlist_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| r.into()).collect())
+}

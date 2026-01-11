@@ -15,6 +15,7 @@ import {
   Save,
   ArrowUp,
   ArrowDown,
+  ChevronRight,
 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn, formatDuration } from "@/lib/utils";
@@ -25,13 +26,22 @@ import {
   playSong,
   deleteSongs,
   updateSongMetadata,
+  getPlaylists,
+  addSongsToPlaylist,
+  createPlaylist,
 } from "@/api/tauri";
 import type { Song, SongGroup } from "@/types";
 
 const ROW_HEIGHT = 32; // Standard row height
 
 interface SongRowData {
-  items: Array<{ song: Song; showAlbumArt: boolean; isFirstOfAlbum: boolean }>;
+  items: Array<{
+    song: Song;
+    showAlbumArt: boolean;
+    isFirstOfAlbum: boolean;
+    isLastOfAlbum: boolean;
+    albumSongCount: number;
+  }>;
   selectedSongIds: Set<string>;
   currentSongId: string | null;
   onSongClick: (e: React.MouseEvent, songId: string) => void;
@@ -45,6 +55,7 @@ interface SongRowProps {
   song: Song;
   showAlbumArt: boolean;
   isFirstOfAlbum: boolean;
+  albumSongCount: number;
   isSelected: boolean;
   isPlaying: boolean;
   onClick: (e: React.MouseEvent) => void;
@@ -58,6 +69,7 @@ function SongRow({
   song,
   showAlbumArt,
   isFirstOfAlbum,
+  albumSongCount,
   isSelected,
   isPlaying,
   onClick,
@@ -82,6 +94,9 @@ function SongRow({
     song.artworkData ||
     (song.artCachePath ? convertFileSrc(song.artCachePath) : null);
 
+  // Artwork fits within row height (ROW_HEIGHT = 32px, so use 28px with 2px padding)
+  const artworkSize = "w-7 h-7";
+
   return (
     <div
       className={cn(
@@ -95,12 +110,14 @@ function SongRow({
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
     >
-      {/* Album artwork column - spans 2 rows visually */}
-      <div className="w-16 flex-shrink-0 flex items-center justify-center relative">
+      {/* Album artwork column - fits within row height */}
+      <div className="w-10 flex-shrink-0 flex items-center justify-center">
         {isFirstOfAlbum && showAlbumArt ? (
           <div
-            className="absolute w-14 h-14 bg-muted rounded flex items-center justify-center overflow-hidden shadow-sm"
-            style={{ top: "-7px" }} // Position to span 2 rows
+            className={cn(
+              "bg-muted rounded flex items-center justify-center overflow-hidden shadow-sm",
+              artworkSize
+            )}
           >
             {artworkSrc ? (
               <img
@@ -109,7 +126,7 @@ function SongRow({
                 className="w-full h-full object-cover"
               />
             ) : (
-              <Music className="w-6 h-6 text-muted-foreground" />
+              <Music className="w-4 h-4 text-muted-foreground" />
             )}
           </div>
         ) : null}
@@ -188,7 +205,7 @@ function VirtualRow({
   const item = rowProps.items[index];
   if (!item) return <div style={style} />;
 
-  const { song, showAlbumArt, isFirstOfAlbum } = item;
+  const { song, showAlbumArt, isFirstOfAlbum, albumSongCount } = item;
   const isSelected = rowProps.selectedSongIds.has(song.id);
   const isPlaying = rowProps.currentSongId === song.id;
 
@@ -198,6 +215,7 @@ function VirtualRow({
         song={song}
         showAlbumArt={showAlbumArt}
         isFirstOfAlbum={isFirstOfAlbum}
+        albumSongCount={albumSongCount}
         isSelected={isSelected}
         isPlaying={isPlaying}
         onClick={(e) => rowProps.onSongClick(e, song.id)}
@@ -258,9 +276,16 @@ export function SongList() {
     y: number;
     song: Song;
   } | null>(null);
+  const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
   const [showMetadataEditor, setShowMetadataEditor] = useState(false);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fetch playlists for context menu
+  const { data: playlists = [] } = useQuery({
+    queryKey: ["playlists"],
+    queryFn: getPlaylists,
+  });
 
   // Drag selection state
   const [isDragging, setIsDragging] = useState(false);
@@ -374,6 +399,8 @@ export function SongList() {
       song: Song;
       showAlbumArt: boolean;
       isFirstOfAlbum: boolean;
+      isLastOfAlbum: boolean;
+      albumSongCount: number;
     }> = [];
 
     for (const group of songGroups) {
@@ -382,6 +409,8 @@ export function SongList() {
           song,
           showAlbumArt: index === 0,
           isFirstOfAlbum: index === 0,
+          isLastOfAlbum: index === group.songs.length - 1,
+          albumSongCount: group.songs.length,
         });
       });
     }
@@ -742,13 +771,81 @@ export function SongList() {
             <FileText className="w-4 h-4" />
             {t("contextMenu.viewMetadata", "View/Edit Metadata")}
           </button>
-          <button
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left text-muted-foreground"
-            disabled
+          <div
+            className="relative"
+            onMouseEnter={() => setShowPlaylistSubmenu(true)}
+            onMouseLeave={() => setShowPlaylistSubmenu(false)}
           >
-            <ListPlus className="w-4 h-4" />
-            {t("contextMenu.addToPlaylist", "Add to Playlist...")}
-          </button>
+            <button className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left">
+              <span className="flex items-center gap-2">
+                <ListPlus className="w-4 h-4" />
+                {t("contextMenu.addToPlaylist", "Add to Playlist...")}
+              </span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            {showPlaylistSubmenu && (
+              <div className="absolute left-full top-0 ml-1 w-48 py-1 bg-background border border-border rounded-lg shadow-lg z-50">
+                <button
+                  onClick={async () => {
+                    const name = prompt(
+                      t("playlist.newPlaylistName", "Enter playlist name:")
+                    );
+                    if (name) {
+                      try {
+                        const playlist = await createPlaylist(name);
+                        const songIds =
+                          selectedSongIds.size > 0
+                            ? Array.from(selectedSongIds)
+                            : [contextMenu.song.id];
+                        await addSongsToPlaylist(playlist.id, songIds);
+                        queryClient.invalidateQueries({
+                          queryKey: ["playlists"],
+                        });
+                        setContextMenu(null);
+                      } catch (error) {
+                        console.error("Failed to create playlist:", error);
+                      }
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
+                >
+                  <ListPlus className="w-4 h-4" />
+                  {t("playlist.createNew", "Create New Playlist")}
+                </button>
+                {playlists.length > 0 && (
+                  <>
+                    <div className="border-t border-border my-1" />
+                    {playlists.map((playlist) => (
+                      <button
+                        key={playlist.id}
+                        onClick={async () => {
+                          try {
+                            const songIds =
+                              selectedSongIds.size > 0
+                                ? Array.from(selectedSongIds)
+                                : [contextMenu.song.id];
+                            await addSongsToPlaylist(playlist.id, songIds);
+                            queryClient.invalidateQueries({
+                              queryKey: ["playlists"],
+                            });
+                            queryClient.invalidateQueries({
+                              queryKey: ["playlist-songs", playlist.id],
+                            });
+                            setContextMenu(null);
+                          } catch (error) {
+                            console.error("Failed to add to playlist:", error);
+                          }
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left truncate"
+                      >
+                        {playlist.name}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           <div className="border-t border-border my-1" />
           <button
             onClick={handleDeleteFromContextMenu}

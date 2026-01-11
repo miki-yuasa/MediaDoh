@@ -3,7 +3,7 @@
 use crate::database::DbPool;
 use crate::devices::detect_devices;
 use crate::error::Result;
-use crate::models::{Device, RepeatMode, Song, ThemePreference, ViewMode};
+use crate::models::{Device, Playlist, RepeatMode, Song, ThemePreference, ViewMode};
 use crate::onedrive::{OneDriveClient, OneDriveTokens};
 use crate::player::{AudioPlayer, PlayerState};
 use crate::scanner::{get_all_songs, scan_directory_with_options, ScanOptions};
@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
+use uuid::Uuid;
 
 /// Application state managed by Tauri
 pub struct AppState {
@@ -226,8 +227,8 @@ pub async fn update_song_metadata(
     updates.push(format!("date_modified = ${}", param_idx));
     let now = chrono::Utc::now().to_rfc3339();
 
-    // Build search text
-    let search_text = format!(
+    // Execute update using a simpler approach
+    let _search_text = format!(
         "{} {} {} {}",
         metadata.title.as_deref().unwrap_or(""),
         metadata.artist.as_deref().unwrap_or(""),
@@ -235,8 +236,8 @@ pub async fn update_song_metadata(
         metadata.album_artist.as_deref().unwrap_or("")
     );
 
-    // Execute update using a simpler approach
-    let query = format!(
+    // Keep query for potential future use
+    let _query = format!(
         "UPDATE songs SET {} WHERE id = ${}",
         updates.join(", "),
         param_idx + 1
@@ -347,6 +348,14 @@ pub async fn resume(state: State<'_, AppState>) -> Result<()> {
 pub async fn stop(state: State<'_, AppState>) -> Result<()> {
     let player = state.player.lock().unwrap();
     player.stop()?;
+    Ok(())
+}
+
+/// Seek to a specific position in milliseconds
+#[tauri::command]
+pub async fn seek_to(position_ms: u64, state: State<'_, AppState>) -> Result<()> {
+    let player = state.player.lock().unwrap();
+    player.seek_to(position_ms)?;
     Ok(())
 }
 
@@ -728,4 +737,473 @@ pub async fn onedrive_get_client_id(state: State<'_, AppState>) -> Result<String
     } else {
         Ok(state.onedrive.get_client_id().await)
     }
+}
+
+// ============================================================================
+// Playlist Commands
+// ============================================================================
+
+/// Get all playlists
+#[tauri::command]
+pub async fn get_playlists(state: State<'_, AppState>) -> Result<Vec<Playlist>> {
+    let playlists = sqlx::query_as::<_, (String, String, Option<String>, i64, i64, String, String, bool, Option<String>)>(
+        "SELECT id, name, description, track_count, total_duration_ms, date_created, date_modified, is_smart_playlist, smart_criteria 
+         FROM playlists ORDER BY name"
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|row| Playlist {
+        id: row.0,
+        name: row.1,
+        description: row.2,
+        track_count: row.3 as u32,
+        total_duration_ms: row.4 as u64,
+        date_created: chrono::DateTime::parse_from_rfc3339(&row.5)
+            .unwrap_or_else(|_| chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap())
+            .with_timezone(&chrono::Utc),
+        date_modified: chrono::DateTime::parse_from_rfc3339(&row.6)
+            .unwrap_or_else(|_| chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap())
+            .with_timezone(&chrono::Utc),
+        is_smart_playlist: row.7,
+        smart_criteria: row.8,
+    })
+    .collect();
+
+    Ok(playlists)
+}
+
+/// Create a new playlist
+#[tauri::command]
+pub async fn create_playlist(
+    name: String,
+    description: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Playlist> {
+    let id = Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    sqlx::query(
+        "INSERT INTO playlists (id, name, description, track_count, total_duration_ms, date_created, date_modified, is_smart_playlist) 
+         VALUES (?, ?, ?, 0, 0, ?, ?, 0)"
+    )
+    .bind(&id)
+    .bind(&name)
+    .bind(&description)
+    .bind(&now)
+    .bind(&now)
+    .execute(&state.db)
+    .await?;
+
+    let playlist = Playlist {
+        id,
+        name,
+        description,
+        track_count: 0,
+        total_duration_ms: 0,
+        date_created: chrono::Utc::now(),
+        date_modified: chrono::Utc::now(),
+        is_smart_playlist: false,
+        smart_criteria: None,
+    };
+
+    Ok(playlist)
+}
+
+/// Update a playlist
+#[tauri::command]
+pub async fn update_playlist(
+    playlist_id: String,
+    name: String,
+    description: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Playlist> {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    sqlx::query("UPDATE playlists SET name = ?, description = ?, date_modified = ? WHERE id = ?")
+        .bind(&name)
+        .bind(&description)
+        .bind(&now)
+        .bind(&playlist_id)
+        .execute(&state.db)
+        .await?;
+
+    // Fetch updated playlist
+    let row = sqlx::query_as::<_, (String, String, Option<String>, i64, i64, String, String, bool, Option<String>)>(
+        "SELECT id, name, description, track_count, total_duration_ms, date_created, date_modified, is_smart_playlist, smart_criteria 
+         FROM playlists WHERE id = ?"
+    )
+    .bind(&playlist_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Playlist {
+        id: row.0,
+        name: row.1,
+        description: row.2,
+        track_count: row.3 as u32,
+        total_duration_ms: row.4 as u64,
+        date_created: chrono::DateTime::parse_from_rfc3339(&row.5)
+            .unwrap_or_else(|_| {
+                chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap()
+            })
+            .with_timezone(&chrono::Utc),
+        date_modified: chrono::DateTime::parse_from_rfc3339(&row.6)
+            .unwrap_or_else(|_| {
+                chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap()
+            })
+            .with_timezone(&chrono::Utc),
+        is_smart_playlist: row.7,
+        smart_criteria: row.8,
+    })
+}
+
+/// Delete a playlist
+#[tauri::command]
+pub async fn delete_playlist(playlist_id: String, state: State<'_, AppState>) -> Result<()> {
+    // Delete entries first (should cascade, but be explicit)
+    sqlx::query("DELETE FROM playlist_entries WHERE playlist_id = ?")
+        .bind(&playlist_id)
+        .execute(&state.db)
+        .await?;
+
+    sqlx::query("DELETE FROM playlists WHERE id = ?")
+        .bind(&playlist_id)
+        .execute(&state.db)
+        .await?;
+
+    Ok(())
+}
+
+/// Get songs in a playlist (ordered by position)
+#[tauri::command]
+pub async fn get_playlist_songs(
+    playlist_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<Song>> {
+    use crate::scanner::get_playlist_songs_from_db;
+    get_playlist_songs_from_db(&state.db, &playlist_id).await
+}
+
+/// Add a song to a playlist
+#[tauri::command]
+pub async fn add_song_to_playlist(
+    playlist_id: String,
+    song_id: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let id = Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Get max position
+    let max_position: i64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(MAX(position), -1) FROM playlist_entries WHERE playlist_id = ?",
+    )
+    .bind(&playlist_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(-1);
+
+    let new_position = max_position + 1;
+
+    // Insert entry
+    sqlx::query(
+        "INSERT OR IGNORE INTO playlist_entries (id, playlist_id, song_id, position, date_added) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(&id)
+    .bind(&playlist_id)
+    .bind(&song_id)
+    .bind(new_position)
+    .bind(&now)
+    .execute(&state.db)
+    .await?;
+
+    // Update playlist stats
+    update_playlist_stats(&playlist_id, &state.db).await?;
+
+    Ok(())
+}
+
+/// Add multiple songs to a playlist
+#[tauri::command]
+pub async fn add_songs_to_playlist(
+    playlist_id: String,
+    song_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Get max position
+    let max_position: i64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(MAX(position), -1) FROM playlist_entries WHERE playlist_id = ?",
+    )
+    .bind(&playlist_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(-1);
+
+    for (i, song_id) in song_ids.iter().enumerate() {
+        let id = Uuid::new_v4().to_string();
+        let position = max_position + 1 + i as i64;
+
+        sqlx::query(
+            "INSERT OR IGNORE INTO playlist_entries (id, playlist_id, song_id, position, date_added) VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind(&id)
+        .bind(&playlist_id)
+        .bind(song_id)
+        .bind(position)
+        .bind(&now)
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Update playlist stats
+    update_playlist_stats(&playlist_id, &state.db).await?;
+
+    Ok(())
+}
+
+/// Remove a song from a playlist
+#[tauri::command]
+pub async fn remove_song_from_playlist(
+    playlist_id: String,
+    song_id: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    sqlx::query("DELETE FROM playlist_entries WHERE playlist_id = ? AND song_id = ?")
+        .bind(&playlist_id)
+        .bind(&song_id)
+        .execute(&state.db)
+        .await?;
+
+    // Reorder remaining entries
+    reorder_playlist_entries(&playlist_id, &state.db).await?;
+
+    // Update playlist stats
+    update_playlist_stats(&playlist_id, &state.db).await?;
+
+    Ok(())
+}
+
+/// Reorder songs in a playlist
+#[tauri::command]
+pub async fn reorder_playlist_songs(
+    playlist_id: String,
+    song_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    for (i, song_id) in song_ids.iter().enumerate() {
+        sqlx::query(
+            "UPDATE playlist_entries SET position = ? WHERE playlist_id = ? AND song_id = ?",
+        )
+        .bind(i as i64)
+        .bind(&playlist_id)
+        .bind(song_id)
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Update modified date
+    sqlx::query("UPDATE playlists SET date_modified = ? WHERE id = ?")
+        .bind(&now)
+        .bind(&playlist_id)
+        .execute(&state.db)
+        .await?;
+
+    Ok(())
+}
+
+/// Export playlist to M3U format
+#[tauri::command]
+pub async fn export_playlist_m3u(
+    playlist_id: String,
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    use std::fs::File;
+    use std::io::Write;
+
+    // Get playlist info
+    let playlist_name: String = sqlx::query_scalar("SELECT name FROM playlists WHERE id = ?")
+        .bind(&playlist_id)
+        .fetch_one(&state.db)
+        .await?;
+
+    // Get songs
+    let songs: Vec<(String, String, i64)> = sqlx::query_as(
+        r#"SELECT s.file_path, s.title, s.duration_ms
+           FROM songs s
+           INNER JOIN playlist_entries pe ON s.id = pe.song_id
+           WHERE pe.playlist_id = ?
+           ORDER BY pe.position"#,
+    )
+    .bind(&playlist_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut file = File::create(&file_path)?;
+
+    // Write M3U header
+    writeln!(file, "#EXTM3U")?;
+    writeln!(file, "#PLAYLIST:{}", playlist_name)?;
+
+    for (path, title, duration_ms) in songs {
+        let duration_secs = duration_ms / 1000;
+        writeln!(file, "#EXTINF:{},{}", duration_secs, title)?;
+        writeln!(file, "{}", path)?;
+    }
+
+    Ok(())
+}
+
+/// Import playlist from M3U file
+#[tauri::command]
+pub async fn import_playlist_m3u(
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<Playlist> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let file = File::open(&file_path)?;
+    let reader = BufReader::new(file);
+
+    let mut playlist_name = PathBuf::from(&file_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Imported Playlist".to_string());
+
+    let mut song_paths: Vec<String> = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+
+        if line.starts_with("#PLAYLIST:") {
+            playlist_name = line.trim_start_matches("#PLAYLIST:").trim().to_string();
+        } else if !line.starts_with('#') && !line.is_empty() {
+            song_paths.push(line.to_string());
+        }
+    }
+
+    // Create playlist
+    let id = Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    sqlx::query(
+        "INSERT INTO playlists (id, name, description, track_count, total_duration_ms, date_created, date_modified, is_smart_playlist) 
+         VALUES (?, ?, NULL, 0, 0, ?, ?, 0)"
+    )
+    .bind(&id)
+    .bind(&playlist_name)
+    .bind(&now)
+    .bind(&now)
+    .execute(&state.db)
+    .await?;
+
+    // Find matching songs and add them
+    let mut position = 0i64;
+    for path in song_paths {
+        // Try to find the song by file path
+        let song_id: Option<String> =
+            sqlx::query_scalar("SELECT id FROM songs WHERE file_path = ?")
+                .bind(&path)
+                .fetch_optional(&state.db)
+                .await?;
+
+        if let Some(song_id) = song_id {
+            let entry_id = Uuid::new_v4().to_string();
+            sqlx::query(
+                "INSERT OR IGNORE INTO playlist_entries (id, playlist_id, song_id, position, date_added) VALUES (?, ?, ?, ?, ?)"
+            )
+            .bind(&entry_id)
+            .bind(&id)
+            .bind(&song_id)
+            .bind(position)
+            .bind(&now)
+            .execute(&state.db)
+            .await?;
+            position += 1;
+        }
+    }
+
+    // Update playlist stats
+    update_playlist_stats(&id, &state.db).await?;
+
+    // Fetch and return the created playlist
+    let row = sqlx::query_as::<_, (String, String, Option<String>, i64, i64, String, String, bool, Option<String>)>(
+        "SELECT id, name, description, track_count, total_duration_ms, date_created, date_modified, is_smart_playlist, smart_criteria 
+         FROM playlists WHERE id = ?"
+    )
+    .bind(&id)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Playlist {
+        id: row.0,
+        name: row.1,
+        description: row.2,
+        track_count: row.3 as u32,
+        total_duration_ms: row.4 as u64,
+        date_created: chrono::DateTime::parse_from_rfc3339(&row.5)
+            .unwrap_or_else(|_| {
+                chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap()
+            })
+            .with_timezone(&chrono::Utc),
+        date_modified: chrono::DateTime::parse_from_rfc3339(&row.6)
+            .unwrap_or_else(|_| {
+                chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:00Z").unwrap()
+            })
+            .with_timezone(&chrono::Utc),
+        is_smart_playlist: row.7,
+        smart_criteria: row.8,
+    })
+}
+
+/// Helper: Update playlist track count and duration
+async fn update_playlist_stats(playlist_id: &str, db: &DbPool) -> Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let stats: (i64, i64) = sqlx::query_as(
+        r#"SELECT COUNT(*), COALESCE(SUM(s.duration_ms), 0)
+           FROM playlist_entries pe
+           INNER JOIN songs s ON pe.song_id = s.id
+           WHERE pe.playlist_id = ?"#,
+    )
+    .bind(playlist_id)
+    .fetch_one(db)
+    .await?;
+
+    sqlx::query("UPDATE playlists SET track_count = ?, total_duration_ms = ?, date_modified = ? WHERE id = ?")
+        .bind(stats.0)
+        .bind(stats.1)
+        .bind(&now)
+        .bind(playlist_id)
+        .execute(db)
+        .await?;
+
+    Ok(())
+}
+
+/// Helper: Reorder playlist entries sequentially after deletion
+async fn reorder_playlist_entries(playlist_id: &str, db: &DbPool) -> Result<()> {
+    let entries: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM playlist_entries WHERE playlist_id = ? ORDER BY position",
+    )
+    .bind(playlist_id)
+    .fetch_all(db)
+    .await?;
+
+    for (i, entry_id) in entries.iter().enumerate() {
+        sqlx::query("UPDATE playlist_entries SET position = ? WHERE id = ?")
+            .bind(i as i64)
+            .bind(entry_id)
+            .execute(db)
+            .await?;
+    }
+
+    Ok(())
 }

@@ -124,9 +124,10 @@
 @layer components {
   /* High-density table rows */
   .song-row {
-    @apply flex items-center px-2 py-1.5 text-sm border-b border-border/50;
+    @apply flex items-center px-2 text-sm border-b border-border/50;
     @apply hover:bg-accent/50 cursor-pointer transition-colors;
-    min-height: 48px;
+    height: 32px;
+    min-height: 32px;
   }
 
   .song-row.selected {
@@ -163,8 +164,12 @@
 
   /* Player controls */
   .player-button {
-    @apply p-2 rounded-full hover:bg-accent transition-colors;
+    @apply p-2 rounded-full hover:bg-accent transition-colors text-muted-foreground;
     @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+  }
+
+  .player-button.active {
+    @apply text-primary;
   }
 
   .player-button.primary {
@@ -173,11 +178,15 @@
 
   /* Progress bar */
   .progress-bar {
-    @apply relative h-1 bg-muted rounded-full overflow-hidden;
+    @apply relative h-1 bg-muted rounded-full overflow-hidden cursor-pointer;
+  }
+
+  .progress-bar:hover {
+    @apply h-1.5;
   }
 
   .progress-bar .progress-fill {
-    @apply absolute left-0 top-0 h-full bg-primary transition-all;
+    @apply absolute left-0 top-0 h-full bg-primary transition-all pointer-events-none;
   }
 
   /* Sync status indicator */

@@ -234,6 +234,13 @@ export async function stop(): Promise<void> {
 }
 
 /**
+ * Seek to a specific position in milliseconds
+ */
+export async function seekTo(positionMs: number): Promise<void> {
+  return invoke("seek_to", { positionMs });
+}
+
+/**
  * Set volume (0.0 to 1.0)
  */
 export async function setVolume(volume: number): Promise<void> {
@@ -378,6 +385,111 @@ export async function disconnectOneDrive(): Promise<void> {
  */
 export async function setOneDriveClientId(clientId: string): Promise<void> {
   return invoke("onedrive_set_client_id", { clientId });
+}
+
+// ============================================================================
+// Playlist API
+// ============================================================================
+
+import type { Playlist } from "@/types";
+
+/**
+ * Get all playlists
+ */
+export async function getPlaylists(): Promise<Playlist[]> {
+  return invoke<Playlist[]>("get_playlists");
+}
+
+/**
+ * Create a new playlist
+ */
+export async function createPlaylist(
+  name: string,
+  description?: string
+): Promise<Playlist> {
+  return invoke<Playlist>("create_playlist", { name, description });
+}
+
+/**
+ * Update a playlist
+ */
+export async function updatePlaylist(
+  playlistId: string,
+  name: string,
+  description?: string
+): Promise<Playlist> {
+  return invoke<Playlist>("update_playlist", { playlistId, name, description });
+}
+
+/**
+ * Delete a playlist
+ */
+export async function deletePlaylist(playlistId: string): Promise<void> {
+  return invoke("delete_playlist", { playlistId });
+}
+
+/**
+ * Get songs in a playlist
+ */
+export async function getPlaylistSongs(playlistId: string): Promise<Song[]> {
+  return invoke<Song[]>("get_playlist_songs", { playlistId });
+}
+
+/**
+ * Add a song to a playlist
+ */
+export async function addSongToPlaylist(
+  playlistId: string,
+  songId: string
+): Promise<void> {
+  return invoke("add_song_to_playlist", { playlistId, songId });
+}
+
+/**
+ * Add multiple songs to a playlist
+ */
+export async function addSongsToPlaylist(
+  playlistId: string,
+  songIds: string[]
+): Promise<void> {
+  return invoke("add_songs_to_playlist", { playlistId, songIds });
+}
+
+/**
+ * Remove a song from a playlist
+ */
+export async function removeSongFromPlaylist(
+  playlistId: string,
+  songId: string
+): Promise<void> {
+  return invoke("remove_song_from_playlist", { playlistId, songId });
+}
+
+/**
+ * Reorder songs in a playlist
+ */
+export async function reorderPlaylistSongs(
+  playlistId: string,
+  songIds: string[]
+): Promise<void> {
+  return invoke("reorder_playlist_songs", { playlistId, songIds });
+}
+
+/**
+ * Export playlist to M3U file
+ */
+export async function exportPlaylistM3U(
+  playlistId: string,
+  filePath: string
+): Promise<void> {
+  return invoke("export_playlist_m3u", { playlistId, filePath });
+}
+
+/**
+ * Import playlist from M3U file
+ */
+export async function importPlaylistM3U(filePath: string): Promise<Playlist> {
+  return invoke<Playlist>("import_playlist_m3u", { filePath });
 }
 
 /**

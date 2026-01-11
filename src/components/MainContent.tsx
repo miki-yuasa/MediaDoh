@@ -1,13 +1,15 @@
-import { useMemo, useCallback, useEffect } from "react";
+import { useMemo, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { debounce } from "lodash-es";
 import {
   Search,
   FolderPlus,
   RefreshCw,
-  LayoutList,
-  LayoutGrid,
   StopCircle,
+  ArrowUpDown,
+  Grid3X3,
+  Grid2X2,
+  LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore, useLibraryStore } from "@/store";
@@ -22,13 +24,24 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { SongList } from "./SongList";
 import { AlbumGrid } from "./AlbumGrid";
+import { ArtistList } from "./ArtistList";
+import { PlaylistDetail } from "./PlaylistDetail";
 import { SettingsPanel } from "./SettingsPanel";
+
+export type AlbumSize = "small" | "medium" | "large";
+export type AlbumSortField = "artist" | "year" | "dateAdded" | "title";
 
 export function MainContent() {
   const { t } = useTranslation();
-  const { activeSection, viewMode, setViewMode } = useUIStore();
+  const { activeSection } = useUIStore();
   const { setSearchQuery, isScanning, setIsScanning } = useLibraryStore();
   const queryClient = useQueryClient();
+
+  // Album view state
+  const [albumSize, setAlbumSize] = useState<AlbumSize>("medium");
+  const [albumSortField, setAlbumSortField] =
+    useState<AlbumSortField>("artist");
+  const [showSortMenu, setShowSortMenu] = useState(false);
 
   // Listen for song-added events during scanning for incremental updates
   useEffect(() => {
@@ -120,20 +133,23 @@ export function MainContent() {
       );
     }
 
+    // Check if viewing a playlist
+    if (activeSection.startsWith("playlist-")) {
+      const playlistId = activeSection.replace("playlist-", "");
+      return <PlaylistDetail playlistId={playlistId} />;
+    }
+
     // Library views
     switch (activeSection) {
       case "songs":
-        return viewMode === "list" ? <SongList /> : <AlbumGrid />;
+        // Always show song list for songs tab
+        return <SongList />;
       case "albums":
-        return <AlbumGrid />;
+        return <AlbumGrid albumSize={albumSize} sortField={albumSortField} />;
       case "artists":
-        return (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <p>{t("common.comingSoon")}</p>
-          </div>
-        );
+        return <ArtistList />;
       default:
-        return viewMode === "list" ? <SongList /> : <AlbumGrid />;
+        return <SongList />;
     }
   };
 
@@ -194,34 +210,123 @@ export function MainContent() {
           </div>
         )}
 
-        {/* View Mode Toggle */}
-        {activeSection !== "settings" && (
-          <div className="flex items-center border border-border rounded-md overflow-hidden">
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "p-1.5 transition-colors",
-                viewMode === "list"
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-accent/50"
+        {/* Album view controls - only show for albums tab */}
+        {activeSection === "albums" && (
+          <>
+            {/* Album Sort */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSortMenu(!showSortMenu)}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1.5 text-sm rounded-md transition-colors",
+                  "hover:bg-accent"
+                )}
+                title={t("view.sortBy")}
+              >
+                <ArrowUpDown className="w-4 h-4" />
+                <span className="hidden sm:inline text-xs">
+                  {albumSortField === "artist" && t("view.columns.artist")}
+                  {albumSortField === "year" && t("view.columns.year")}
+                  {albumSortField === "dateAdded" &&
+                    t("library.dateAdded", "Date Added")}
+                  {albumSortField === "title" &&
+                    t("view.columns.album", "Album")}
+                </span>
+              </button>
+              {showSortMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-background border border-border rounded-md shadow-lg py-1 min-w-[120px]">
+                  <button
+                    onClick={() => {
+                      setAlbumSortField("artist");
+                      setShowSortMenu(false);
+                    }}
+                    className={cn(
+                      "w-full px-3 py-1.5 text-left text-sm hover:bg-accent",
+                      albumSortField === "artist" && "bg-accent"
+                    )}
+                  >
+                    {t("view.columns.artist")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAlbumSortField("year");
+                      setShowSortMenu(false);
+                    }}
+                    className={cn(
+                      "w-full px-3 py-1.5 text-left text-sm hover:bg-accent",
+                      albumSortField === "year" && "bg-accent"
+                    )}
+                  >
+                    {t("view.columns.year")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAlbumSortField("dateAdded");
+                      setShowSortMenu(false);
+                    }}
+                    className={cn(
+                      "w-full px-3 py-1.5 text-left text-sm hover:bg-accent",
+                      albumSortField === "dateAdded" && "bg-accent"
+                    )}
+                  >
+                    {t("library.dateAdded", "Date Added")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAlbumSortField("title");
+                      setShowSortMenu(false);
+                    }}
+                    className={cn(
+                      "w-full px-3 py-1.5 text-left text-sm hover:bg-accent",
+                      albumSortField === "title" && "bg-accent"
+                    )}
+                  >
+                    {t("view.columns.album", "Album")}
+                  </button>
+                </div>
               )}
-              title={t("view.list")}
-            >
-              <LayoutList className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("grid")}
-              className={cn(
-                "p-1.5 transition-colors",
-                viewMode === "grid"
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-accent/50"
-              )}
-              title={t("view.grid")}
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
+            </div>
+
+            {/* Album Size Selector */}
+            <div className="flex items-center border border-border rounded-md overflow-hidden">
+              <button
+                onClick={() => setAlbumSize("small")}
+                className={cn(
+                  "p-1.5 transition-colors",
+                  albumSize === "small"
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                title={t("view.albumSize.small", "Small")}
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setAlbumSize("medium")}
+                className={cn(
+                  "p-1.5 transition-colors",
+                  albumSize === "medium"
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                title={t("view.albumSize.medium", "Medium")}
+              >
+                <Grid2X2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setAlbumSize("large")}
+                className={cn(
+                  "p-1.5 transition-colors",
+                  albumSize === "large"
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                title={t("view.albumSize.large", "Large")}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+            </div>
+          </>
         )}
       </div>
 
