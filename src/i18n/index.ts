@@ -97,6 +97,9 @@ const enTranslations = {
     exportSuccess: "Playlist exported successfully",
     songs: "{{count}} songs",
     duration: "{{duration}}",
+    duplicateWarning:
+      "{{count}} song(s) already exist in this playlist. Add anyway?",
+    allDuplicates: "All selected songs are already in this playlist.",
   },
   contextMenu: {
     playFromHere: "Play from here",
@@ -140,6 +143,8 @@ const enTranslations = {
       dateAdded: "Added",
       format: "Format",
       syncStatus: "Sync",
+      tracks: "Tracks",
+      albumArtist: "Album Artist",
     },
   },
   settings: {
@@ -278,6 +283,9 @@ const jaTranslations = {
     exportSuccess: "プレイリストをエクスポートしました",
     songs: "{{count}}曲",
     duration: "{{duration}}",
+    duplicateWarning:
+      "{{count}}曲はすでにこのプレイリストに存在します。追加しますか？",
+    allDuplicates: "選択したすべての曲はすでにこのプレイリストに存在します。",
   },
   contextMenu: {
     playFromHere: "ここから再生",
@@ -321,6 +329,8 @@ const jaTranslations = {
       dateAdded: "追加日",
       format: "形式",
       syncStatus: "同期",
+      tracks: "曲数",
+      albumArtist: "アルバムアーティスト",
     },
   },
   settings: {

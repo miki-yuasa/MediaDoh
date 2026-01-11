@@ -10,6 +10,7 @@ import {
   Grid3X3,
   Grid2X2,
   LayoutGrid,
+  List,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore, useLibraryStore } from "@/store";
@@ -30,6 +31,7 @@ import { SettingsPanel } from "./SettingsPanel";
 
 export type AlbumSize = "small" | "medium" | "large";
 export type AlbumSortField = "artist" | "year" | "dateAdded" | "title";
+export type AlbumViewMode = "grid" | "list";
 
 export function MainContent() {
   const { t } = useTranslation();
@@ -41,6 +43,7 @@ export function MainContent() {
   const [albumSize, setAlbumSize] = useState<AlbumSize>("medium");
   const [albumSortField, setAlbumSortField] =
     useState<AlbumSortField>("artist");
+  const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>("grid");
   const [showSortMenu, setShowSortMenu] = useState(false);
 
   // Listen for song-added events during scanning for incremental updates
@@ -145,7 +148,13 @@ export function MainContent() {
         // Always show song list for songs tab
         return <SongList />;
       case "albums":
-        return <AlbumGrid albumSize={albumSize} sortField={albumSortField} />;
+        return (
+          <AlbumGrid
+            albumSize={albumSize}
+            sortField={albumSortField}
+            viewMode={albumViewMode}
+          />
+        );
       case "artists":
         return <ArtistList />;
       default:
@@ -219,12 +228,13 @@ export function MainContent() {
                 onClick={() => setShowSortMenu(!showSortMenu)}
                 className={cn(
                   "flex items-center gap-1.5 px-2 py-1.5 text-sm rounded-md transition-colors",
-                  "hover:bg-accent"
+                  "hover:bg-accent",
+                  "w-32" // Fixed width for sort button
                 )}
                 title={t("view.sortBy")}
               >
-                <ArrowUpDown className="w-4 h-4" />
-                <span className="hidden sm:inline text-xs">
+                <ArrowUpDown className="w-4 h-4 flex-shrink-0" />
+                <span className="text-xs truncate">
                   {albumSortField === "artist" && t("view.columns.artist")}
                   {albumSortField === "year" && t("view.columns.year")}
                   {albumSortField === "dateAdded" &&
@@ -287,43 +297,73 @@ export function MainContent() {
               )}
             </div>
 
-            {/* Album Size Selector */}
+            {/* Album Size Selector - only show for grid mode */}
+            {albumViewMode === "grid" && (
+              <div className="flex items-center border border-border rounded-md overflow-hidden">
+                <button
+                  onClick={() => setAlbumSize("small")}
+                  className={cn(
+                    "p-1.5 transition-colors",
+                    albumSize === "small"
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50"
+                  )}
+                  title={t("view.albumSize.small", "Small")}
+                >
+                  <Grid3X3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setAlbumSize("medium")}
+                  className={cn(
+                    "p-1.5 transition-colors",
+                    albumSize === "medium"
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50"
+                  )}
+                  title={t("view.albumSize.medium", "Medium")}
+                >
+                  <Grid2X2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setAlbumSize("large")}
+                  className={cn(
+                    "p-1.5 transition-colors",
+                    albumSize === "large"
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50"
+                  )}
+                  title={t("view.albumSize.large", "Large")}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* View Mode Toggle */}
             <div className="flex items-center border border-border rounded-md overflow-hidden">
               <button
-                onClick={() => setAlbumSize("small")}
+                onClick={() => setAlbumViewMode("grid")}
                 className={cn(
                   "p-1.5 transition-colors",
-                  albumSize === "small"
+                  albumViewMode === "grid"
                     ? "bg-accent text-accent-foreground"
                     : "hover:bg-accent/50"
                 )}
-                title={t("view.albumSize.small", "Small")}
-              >
-                <Grid3X3 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setAlbumSize("medium")}
-                className={cn(
-                  "p-1.5 transition-colors",
-                  albumSize === "medium"
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50"
-                )}
-                title={t("view.albumSize.medium", "Medium")}
+                title={t("view.grid", "Grid View")}
               >
                 <Grid2X2 className="w-4 h-4" />
               </button>
               <button
-                onClick={() => setAlbumSize("large")}
+                onClick={() => setAlbumViewMode("list")}
                 className={cn(
                   "p-1.5 transition-colors",
-                  albumSize === "large"
+                  albumViewMode === "list"
                     ? "bg-accent text-accent-foreground"
                     : "hover:bg-accent/50"
                 )}
-                title={t("view.albumSize.large", "Large")}
+                title={t("view.list", "List View")}
               >
-                <LayoutGrid className="w-4 h-4" />
+                <List className="w-4 h-4" />
               </button>
             </div>
           </>

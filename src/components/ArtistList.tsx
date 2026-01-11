@@ -1,10 +1,26 @@
-import { useMemo, useCallback, useEffect, useState } from "react";
+import { useMemo, useCallback, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { User, Disc3, Play, X, ArrowUp, ArrowDown } from "lucide-react";
+import {
+  User,
+  Disc3,
+  Play,
+  X,
+  ArrowUp,
+  ArrowDown,
+  ListPlus,
+  ChevronRight,
+} from "lucide-react";
 import { formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
-import { useQuery } from "@tanstack/react-query";
-import { getSongs, playSong } from "@/api/tauri";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getSongs,
+  playSong,
+  getPlaylists,
+  addSongsToPlaylist,
+  createPlaylist,
+  getPlaylistSongs,
+} from "@/api/tauri";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Song, Album } from "@/types";
 
@@ -89,6 +105,7 @@ function songsToArtists(songs: Song[]): ArtistWithAlbums[] {
 
 export function ArtistList() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const { songs, setSongs, searchQuery } = useLibraryStore();
   const { setQueue, setCurrentSong, setIsPlaying, setIsPaused } =
     usePlayerStore();
@@ -102,6 +119,35 @@ export function ArtistList() {
   const [albumSortDirection, setAlbumSortDirection] = useState<"asc" | "desc">(
     "desc"
   );
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    song: Song;
+  } | null>(null);
+  const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fetch playlists for context menu
+  const { data: playlists = [] } = useQuery({
+    queryKey: ["playlists"],
+    queryFn: getPlaylists,
+  });
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(e.target as Node)
+      ) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const { data: fetchedSongs } = useQuery({
     queryKey: ["songs"],
@@ -196,6 +242,77 @@ export function ArtistList() {
     [artistSongs, setQueue, setCurrentSong, setIsPlaying, setIsPaused]
   );
 
+  const handleSongContextMenu = useCallback(
+    (e: React.MouseEvent, song: Song) => {
+      e.preventDefault();
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        song,
+      });
+    },
+    []
+  );
+
+  const handlePlayFromContext = useCallback(
+    async (song: Song) => {
+      const index = artistSongs.findIndex((s) => s.id === song.id);
+      if (index !== -1) {
+        await handlePlaySong(song, index);
+      }
+      setContextMenu(null);
+    },
+    [artistSongs, handlePlaySong]
+  );
+
+  // Helper function to add songs to playlist with duplicate check
+  const handleAddToPlaylist = useCallback(
+    async (playlistId: string, songIds: string[]) => {
+      try {
+        const existingSongs = await getPlaylistSongs(playlistId);
+        const existingIds = new Set(existingSongs.map((s) => s.id));
+        const duplicates = songIds.filter((id) => existingIds.has(id));
+        const newSongs = songIds.filter((id) => !existingIds.has(id));
+
+        if (duplicates.length > 0 && newSongs.length === 0) {
+          alert(
+            t(
+              "playlist.allDuplicates",
+              "All selected songs are already in this playlist."
+            )
+          );
+          return;
+        }
+
+        if (duplicates.length > 0) {
+          const proceed = confirm(
+            t(
+              "playlist.duplicateWarning",
+              "{{count}} song(s) already exist in this playlist. Add anyway?",
+              {
+                count: duplicates.length,
+              }
+            )
+          );
+          if (!proceed) return;
+        }
+
+        await addSongsToPlaylist(
+          playlistId,
+          newSongs.length > 0 ? newSongs : songIds
+        );
+        queryClient.invalidateQueries({ queryKey: ["playlists"] });
+        queryClient.invalidateQueries({
+          queryKey: ["playlist-songs", playlistId],
+        });
+        setContextMenu(null);
+      } catch (error) {
+        console.error("Failed to add to playlist:", error);
+      }
+    },
+    [queryClient, t]
+  );
+
   if (songs.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
@@ -261,7 +378,7 @@ export function ArtistList() {
 
         {/* Album Sort Controls */}
         <div className="flex items-center gap-4 px-4 py-2 bg-background border-b border-border text-xs">
-          <span className="text-muted-foreground">
+          <span className="text-muted-foreground w-16">
             {t("view.sortBy", "Sort by")}:
           </span>
           <button
@@ -272,7 +389,7 @@ export function ArtistList() {
                 setAlbumSortBy("year");
               }
             }}
-            className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors ${
+            className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors w-16 ${
               albumSortBy === "year"
                 ? "text-foreground font-medium"
                 : "text-muted-foreground"
@@ -294,7 +411,7 @@ export function ArtistList() {
                 setAlbumSortBy("name");
               }
             }}
-            className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors ${
+            className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-accent transition-colors w-16 ${
               albumSortBy === "name"
                 ? "text-foreground font-medium"
                 : "text-muted-foreground"
@@ -357,12 +474,13 @@ export function ArtistList() {
                         key={song.id}
                         className="flex items-center gap-3 px-3 py-2 rounded hover:bg-accent cursor-pointer group"
                         onDoubleClick={() => handlePlaySong(song, songIndex)}
+                        onContextMenu={(e) => handleSongContextMenu(e, song)}
                       >
-                        <span className="w-6 text-sm text-muted-foreground text-right tabular-nums pr-1">
+                        <span className="w-6 text-xs text-muted-foreground text-right tabular-nums pr-1">
                           {song.trackNumber || "-"}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <p className="truncate">{song.title}</p>
+                          <p className="truncate text-sm">{song.title}</p>
                         </div>
                         <span className="text-xs text-muted-foreground tabular-nums w-12 text-center">
                           {song.year || "-"}
@@ -384,6 +502,83 @@ export function ArtistList() {
             );
           })}
         </div>
+
+        {/* Context Menu */}
+        {contextMenu && (
+          <div
+            ref={contextMenuRef}
+            className="fixed z-50 min-w-[160px] bg-background border border-border rounded-md shadow-xl py-1"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              onClick={() => handlePlayFromContext(contextMenu.song)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
+            >
+              <Play className="w-4 h-4" />
+              {t("contextMenu.playFromHere", "Play from here")}
+            </button>
+            <div
+              className="relative"
+              onMouseEnter={() => setShowPlaylistSubmenu(true)}
+              onMouseLeave={() => setShowPlaylistSubmenu(false)}
+            >
+              <button className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left">
+                <span className="flex items-center gap-2">
+                  <ListPlus className="w-4 h-4" />
+                  {t("contextMenu.addToPlaylist", "Add to Playlist...")}
+                </span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              {showPlaylistSubmenu && (
+                <div className="absolute left-full top-0 ml-1 w-48 py-1 bg-background border border-border rounded-lg shadow-lg z-50">
+                  <button
+                    onClick={async () => {
+                      const name = prompt(
+                        t("playlist.newPlaylistName", "Enter playlist name:")
+                      );
+                      if (name) {
+                        try {
+                          const playlist = await createPlaylist(name);
+                          await addSongsToPlaylist(playlist.id, [
+                            contextMenu.song.id,
+                          ]);
+                          queryClient.invalidateQueries({
+                            queryKey: ["playlists"],
+                          });
+                          setContextMenu(null);
+                        } catch (error) {
+                          console.error("Failed to create playlist:", error);
+                        }
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
+                  >
+                    <ListPlus className="w-4 h-4" />
+                    {t("playlist.createNew", "Create New Playlist")}
+                  </button>
+                  {playlists.length > 0 && (
+                    <>
+                      <div className="border-t border-border my-1" />
+                      {playlists.map((playlist) => (
+                        <button
+                          key={playlist.id}
+                          onClick={() =>
+                            handleAddToPlaylist(playlist.id, [
+                              contextMenu.song.id,
+                            ])
+                          }
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left truncate"
+                        >
+                          {playlist.name}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Status Bar */}
         <div className="px-3 py-1.5 border-t border-border bg-background-secondary text-xs text-muted-foreground">

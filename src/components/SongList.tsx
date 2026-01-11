@@ -16,6 +16,7 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronRight,
+  Columns3,
 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { cn, formatDuration } from "@/lib/utils";
@@ -29,6 +30,7 @@ import {
   getPlaylists,
   addSongsToPlaylist,
   createPlaylist,
+  getPlaylistSongs,
 } from "@/api/tauri";
 import type { Song, SongGroup } from "@/types";
 
@@ -96,6 +98,55 @@ const saveColumnWidths = (widths: ColumnWidths) => {
   }
 };
 
+// Column visibility configuration
+type ColumnKey = keyof ColumnWidths;
+const TOGGLEABLE_COLUMNS: ColumnKey[] = [
+  "artist",
+  "album",
+  "year",
+  "dateAdded",
+  "duration",
+  "format",
+  "sync",
+];
+
+const DEFAULT_VISIBLE_COLUMNS: Set<ColumnKey> = new Set([
+  "artwork",
+  "trackNumber",
+  "title",
+  "artist",
+  "album",
+  "year",
+  "duration",
+  "format",
+  "sync",
+]);
+
+// Load saved column visibility from localStorage
+const loadVisibleColumns = (): Set<ColumnKey> => {
+  try {
+    const saved = localStorage.getItem("songListVisibleColumns");
+    if (saved) {
+      return new Set(JSON.parse(saved) as ColumnKey[]);
+    }
+  } catch {
+    // ignore
+  }
+  return new Set(DEFAULT_VISIBLE_COLUMNS);
+};
+
+// Save column visibility to localStorage
+const saveVisibleColumns = (columns: Set<ColumnKey>) => {
+  try {
+    localStorage.setItem(
+      "songListVisibleColumns",
+      JSON.stringify(Array.from(columns))
+    );
+  } catch {
+    // ignore
+  }
+};
+
 interface SongRowData {
   items: Array<{
     song: Song;
@@ -107,6 +158,7 @@ interface SongRowData {
   selectedSongIds: Set<string>;
   currentSongId: string | null;
   columnWidths: ColumnWidths;
+  visibleColumns: Set<ColumnKey>;
   onSongClick: (e: React.MouseEvent, songId: string) => void;
   onSongDoubleClick: (song: Song) => void;
   onSongContextMenu: (e: React.MouseEvent, song: Song) => void;
@@ -121,6 +173,7 @@ interface SongRowProps {
   isSelected: boolean;
   isPlaying: boolean;
   columnWidths: ColumnWidths;
+  visibleColumns: Set<ColumnKey>;
   onClick: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -135,6 +188,7 @@ function SongRow({
   isSelected,
   isPlaying,
   columnWidths,
+  visibleColumns,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -209,48 +263,62 @@ function SongRow({
       >
         {song.title}
       </span>
-      <span
-        className="px-2 truncate text-muted-foreground flex-shrink-0"
-        style={{ width: columnWidths.artist }}
-      >
-        {song.artist || "-"}
-      </span>
-      <span
-        className="px-2 truncate text-muted-foreground flex-shrink-0"
-        style={{ width: columnWidths.album }}
-      >
-        {song.album || "-"}
-      </span>
-      <span
-        className="text-center flex-shrink-0 text-xs text-muted-foreground tabular-nums"
-        style={{ width: columnWidths.year }}
-      >
-        {song.year || "-"}
-      </span>
-      <span
-        className="text-center flex-shrink-0 text-xs text-muted-foreground"
-        style={{ width: columnWidths.dateAdded }}
-      >
-        {song.dateAdded ? new Date(song.dateAdded).toLocaleDateString() : "-"}
-      </span>
-      <span
-        className="text-right flex-shrink-0 text-muted-foreground tabular-nums"
-        style={{ width: columnWidths.duration }}
-      >
-        {formatDuration(song.durationMs)}
-      </span>
-      <span
-        className="text-center flex-shrink-0 text-xs text-muted-foreground uppercase"
-        style={{ width: columnWidths.format }}
-      >
-        {song.format}
-      </span>
-      <span
-        className="flex-shrink-0 flex items-center justify-center"
-        style={{ width: columnWidths.sync }}
-      >
-        <SyncIndicator />
-      </span>
+      {visibleColumns.has("artist") && (
+        <span
+          className="px-2 truncate text-muted-foreground flex-shrink-0"
+          style={{ width: columnWidths.artist }}
+        >
+          {song.artist || "-"}
+        </span>
+      )}
+      {visibleColumns.has("album") && (
+        <span
+          className="px-2 truncate text-muted-foreground flex-shrink-0"
+          style={{ width: columnWidths.album }}
+        >
+          {song.album || "-"}
+        </span>
+      )}
+      {visibleColumns.has("year") && (
+        <span
+          className="text-center flex-shrink-0 text-xs text-muted-foreground tabular-nums"
+          style={{ width: columnWidths.year }}
+        >
+          {song.year || "-"}
+        </span>
+      )}
+      {visibleColumns.has("dateAdded") && (
+        <span
+          className="text-center flex-shrink-0 text-xs text-muted-foreground"
+          style={{ width: columnWidths.dateAdded }}
+        >
+          {song.dateAdded ? new Date(song.dateAdded).toLocaleDateString() : "-"}
+        </span>
+      )}
+      {visibleColumns.has("duration") && (
+        <span
+          className="text-right flex-shrink-0 text-muted-foreground tabular-nums"
+          style={{ width: columnWidths.duration }}
+        >
+          {formatDuration(song.durationMs)}
+        </span>
+      )}
+      {visibleColumns.has("format") && (
+        <span
+          className="text-center flex-shrink-0 text-xs text-muted-foreground uppercase"
+          style={{ width: columnWidths.format }}
+        >
+          {song.format}
+        </span>
+      )}
+      {visibleColumns.has("sync") && (
+        <span
+          className="flex-shrink-0 flex items-center justify-center"
+          style={{ width: columnWidths.sync }}
+        >
+          <SyncIndicator />
+        </span>
+      )}
     </div>
   );
 }
@@ -319,6 +387,7 @@ function VirtualRow({
         isSelected={isSelected}
         isPlaying={isPlaying}
         columnWidths={rowProps.columnWidths}
+        visibleColumns={rowProps.visibleColumns}
         onClick={(e) => rowProps.onSongClick(e, song.id)}
         onDoubleClick={() => rowProps.onSongDoubleClick(song)}
         onContextMenu={(e) => rowProps.onSongContextMenu(e, song)}
@@ -469,6 +538,42 @@ export function SongList() {
   // Column widths state with persistence
   const [columnWidths, setColumnWidths] =
     useState<ColumnWidths>(loadColumnWidths);
+
+  // Column visibility state with persistence
+  const [visibleColumns, setVisibleColumns] =
+    useState<Set<ColumnKey>>(loadVisibleColumns);
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close column menu when clicking outside
+  useEffect(() => {
+    if (!showColumnMenu) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        columnMenuRef.current &&
+        !columnMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowColumnMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showColumnMenu]);
+
+  const handleToggleColumn = useCallback((column: ColumnKey) => {
+    setVisibleColumns((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(column)) {
+        updated.delete(column);
+      } else {
+        updated.add(column);
+      }
+      saveVisibleColumns(updated);
+      return updated;
+    });
+  }, []);
 
   const handleColumnResize = useCallback(
     (column: keyof ColumnWidths, newWidth: number) => {
@@ -808,12 +913,67 @@ export function SongList() {
     setShowDeleteConfirm(true);
   }, []);
 
+  // Helper function to add songs to playlist with duplicate check
+  const handleAddToPlaylist = useCallback(
+    async (playlistId: string, songIds: string[]) => {
+      try {
+        // Get existing songs in the playlist
+        const existingSongs = await getPlaylistSongs(playlistId);
+        const existingIds = new Set(existingSongs.map((s) => s.id));
+
+        // Find duplicates
+        const duplicates = songIds.filter((id) => existingIds.has(id));
+        const newSongs = songIds.filter((id) => !existingIds.has(id));
+
+        if (duplicates.length > 0 && newSongs.length === 0) {
+          // All songs are duplicates
+          alert(
+            t(
+              "playlist.allDuplicates",
+              "All selected songs are already in this playlist."
+            )
+          );
+          return;
+        }
+
+        if (duplicates.length > 0) {
+          // Some duplicates, ask user
+          const proceed = confirm(
+            t(
+              "playlist.duplicateWarning",
+              "{{count}} song(s) already exist in this playlist. Add anyway?",
+              {
+                count: duplicates.length,
+              }
+            )
+          );
+          if (!proceed) return;
+        }
+
+        // Add only new songs if user cancels, or all if they proceed
+        await addSongsToPlaylist(
+          playlistId,
+          newSongs.length > 0 ? newSongs : songIds
+        );
+        queryClient.invalidateQueries({ queryKey: ["playlists"] });
+        queryClient.invalidateQueries({
+          queryKey: ["playlist-songs", playlistId],
+        });
+        setContextMenu(null);
+      } catch (error) {
+        console.error("Failed to add to playlist:", error);
+      }
+    },
+    [queryClient, t]
+  );
+
   const rowData: SongRowData = useMemo(
     () => ({
       items: flattenedList,
       selectedSongIds,
       currentSongId: currentSong?.id || null,
       columnWidths,
+      visibleColumns,
       onSongClick: handleSongClick,
       onSongDoubleClick: handleSongDoubleClick,
       onSongContextMenu: handleSongContextMenu,
@@ -825,6 +985,7 @@ export function SongList() {
       selectedSongIds,
       currentSong,
       columnWidths,
+      visibleColumns,
       handleSongClick,
       handleSongDoubleClick,
       handleSongContextMenu,
@@ -864,7 +1025,7 @@ export function SongList() {
           sortDirection={sortDirection}
           onSort={() => handleColumnSort("trackNumber")}
           align="right"
-          className="flex-shrink-0"
+          className="flex-shrink-0 pr-2"
         />
 
         {/* Title - resizable flex column */}
@@ -881,93 +1042,136 @@ export function SongList() {
         />
 
         {/* Artist - resizable */}
-        <ResizableColumnHeader
-          column="artist"
-          label={t("view.columns.artist")}
-          columnWidths={columnWidths}
-          onResize={handleColumnResize}
-          sortable
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={() => handleColumnSort("artist")}
-          className="flex-shrink-0 px-2"
-        />
+        {visibleColumns.has("artist") && (
+          <ResizableColumnHeader
+            column="artist"
+            label={t("view.columns.artist")}
+            columnWidths={columnWidths}
+            onResize={handleColumnResize}
+            sortable
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={() => handleColumnSort("artist")}
+            className="flex-shrink-0 px-2"
+          />
+        )}
 
         {/* Album - resizable */}
-        <ResizableColumnHeader
-          column="album"
-          label={t("view.columns.album")}
-          columnWidths={columnWidths}
-          onResize={handleColumnResize}
-          sortable
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={() => handleColumnSort("album")}
-          className="flex-shrink-0 px-2"
-        />
+        {visibleColumns.has("album") && (
+          <ResizableColumnHeader
+            column="album"
+            label={t("view.columns.album")}
+            columnWidths={columnWidths}
+            onResize={handleColumnResize}
+            sortable
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={() => handleColumnSort("album")}
+            className="flex-shrink-0 px-2"
+          />
+        )}
 
         {/* Year - resizable */}
-        <ResizableColumnHeader
-          column="year"
-          label={t("view.columns.year")}
-          columnWidths={columnWidths}
-          onResize={handleColumnResize}
-          sortable
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={() => handleColumnSort("year")}
-          align="center"
-          className="flex-shrink-0"
-        />
+        {visibleColumns.has("year") && (
+          <ResizableColumnHeader
+            column="year"
+            label={t("view.columns.year")}
+            columnWidths={columnWidths}
+            onResize={handleColumnResize}
+            sortable
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={() => handleColumnSort("year")}
+            align="center"
+            className="flex-shrink-0"
+          />
+        )}
 
         {/* Date Added - resizable */}
-        <ResizableColumnHeader
-          column="dateAdded"
-          label={t("view.columns.dateAdded")}
-          columnWidths={columnWidths}
-          onResize={handleColumnResize}
-          sortable
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={() => handleColumnSort("dateAdded")}
-          align="center"
-          className="flex-shrink-0"
-        />
+        {visibleColumns.has("dateAdded") && (
+          <ResizableColumnHeader
+            column="dateAdded"
+            label={t("view.columns.dateAdded")}
+            columnWidths={columnWidths}
+            onResize={handleColumnResize}
+            sortable
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={() => handleColumnSort("dateAdded")}
+            align="center"
+            className="flex-shrink-0"
+          />
+        )}
 
         {/* Duration - resizable */}
-        <ResizableColumnHeader
-          column="duration"
-          label={t("view.columns.duration")}
-          columnWidths={columnWidths}
-          onResize={handleColumnResize}
-          sortable
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={() => handleColumnSort("duration")}
-          align="right"
-          className="flex-shrink-0"
-        />
+        {visibleColumns.has("duration") && (
+          <ResizableColumnHeader
+            column="duration"
+            label={t("view.columns.duration")}
+            columnWidths={columnWidths}
+            onResize={handleColumnResize}
+            sortable
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={() => handleColumnSort("duration")}
+            align="right"
+            className="flex-shrink-0"
+          />
+        )}
 
         {/* Format - resizable */}
-        <ResizableColumnHeader
-          column="format"
-          label={t("view.columns.format")}
-          columnWidths={columnWidths}
-          onResize={handleColumnResize}
-          sortable
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={() => handleColumnSort("format")}
-          align="center"
-          className="flex-shrink-0"
-        />
+        {visibleColumns.has("format") && (
+          <ResizableColumnHeader
+            column="format"
+            label={t("view.columns.format")}
+            columnWidths={columnWidths}
+            onResize={handleColumnResize}
+            sortable
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={() => handleColumnSort("format")}
+            align="center"
+            className="flex-shrink-0"
+          />
+        )}
 
         {/* Sync status - not resizable */}
-        <div
-          className="text-center flex-shrink-0"
-          style={{ width: columnWidths.sync }}
-        >
-          {t("view.columns.syncStatus")}
+        {visibleColumns.has("sync") && (
+          <div
+            className="text-center flex-shrink-0"
+            style={{ width: columnWidths.sync }}
+          >
+            {t("view.columns.syncStatus")}
+          </div>
+        )}
+
+        {/* Column visibility toggle */}
+        <div className="relative ml-1" ref={columnMenuRef}>
+          <button
+            onClick={() => setShowColumnMenu(!showColumnMenu)}
+            className="p-1 rounded hover:bg-accent transition-colors"
+            title={t("view.columns.title", "Columns")}
+          >
+            <Columns3 className="w-4 h-4" />
+          </button>
+          {showColumnMenu && (
+            <div className="absolute right-0 top-full mt-1 w-40 bg-background border border-border rounded-lg shadow-lg z-50 py-1">
+              {TOGGLEABLE_COLUMNS.map((col) => (
+                <label
+                  key={col}
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-accent cursor-pointer text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.has(col)}
+                    onChange={() => handleToggleColumn(col)}
+                    className="rounded border-border"
+                  />
+                  {t(`view.columns.${col === "sync" ? "syncStatus" : col}`)}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1128,23 +1332,12 @@ export function SongList() {
                     {playlists.map((playlist) => (
                       <button
                         key={playlist.id}
-                        onClick={async () => {
-                          try {
-                            const songIds =
-                              selectedSongIds.size > 0
-                                ? Array.from(selectedSongIds)
-                                : [contextMenu.song.id];
-                            await addSongsToPlaylist(playlist.id, songIds);
-                            queryClient.invalidateQueries({
-                              queryKey: ["playlists"],
-                            });
-                            queryClient.invalidateQueries({
-                              queryKey: ["playlist-songs", playlist.id],
-                            });
-                            setContextMenu(null);
-                          } catch (error) {
-                            console.error("Failed to add to playlist:", error);
-                          }
+                        onClick={() => {
+                          const songIds =
+                            selectedSongIds.size > 0
+                              ? Array.from(selectedSongIds)
+                              : [contextMenu.song.id];
+                          handleAddToPlaylist(playlist.id, songIds);
                         }}
                         className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left truncate"
                       >

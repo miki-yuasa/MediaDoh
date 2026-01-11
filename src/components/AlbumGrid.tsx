@@ -1,15 +1,35 @@
-import { useMemo, useCallback, useEffect, useState } from "react";
+import { useMemo, useCallback, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Grid, CellComponentProps } from "react-window";
+import {
+  Grid,
+  List,
+  CellComponentProps,
+  RowComponentProps,
+} from "react-window";
 import { AutoSizer } from "react-virtualized-auto-sizer";
-import { Disc3, Play, ArrowLeft, Check, AlertCircle } from "lucide-react";
+import {
+  Disc3,
+  Play,
+  ArrowLeft,
+  Check,
+  AlertCircle,
+  ListPlus,
+  ChevronRight,
+} from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { useLibraryStore, usePlayerStore } from "@/store";
-import { useQuery } from "@tanstack/react-query";
-import { getSongs, playSong } from "@/api/tauri";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getSongs,
+  playSong,
+  getPlaylists,
+  addSongsToPlaylist,
+  createPlaylist,
+  getPlaylistSongs,
+} from "@/api/tauri";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Album, Song } from "@/types";
-import type { AlbumSize, AlbumSortField } from "./MainContent";
+import type { AlbumSize, AlbumSortField, AlbumViewMode } from "./MainContent";
 
 // Album card sizes
 const ALBUM_SIZES = {
@@ -168,20 +188,124 @@ function VirtualCell({
   );
 }
 
+// List row height
+const LIST_ROW_HEIGHT = 48;
+
+interface ListItemData {
+  albums: Album[];
+  handleClick: (album: Album) => void;
+}
+
+// List row component for react-window v2
+function VirtualListRow({
+  index,
+  style,
+  ...itemProps
+}: RowComponentProps<ListItemData>) {
+  const { t } = useTranslation();
+  const { albums, handleClick } = itemProps;
+  const album = albums[index];
+
+  if (!album) return <div style={style} />;
+
+  // Prefer artworkData (base64), fall back to artCachePath
+  const artworkUrl =
+    album.artworkData ||
+    (album.artCachePath ? convertFileSrc(album.artCachePath) : null);
+
+  return (
+    <div
+      style={style}
+      className="flex items-center px-2 hover:bg-accent/50 cursor-pointer transition-colors border-b border-border/50"
+      onClick={() => handleClick(album)}
+    >
+      {/* Album Art */}
+      <div className="w-10 h-10 flex-shrink-0 rounded overflow-hidden bg-muted mr-3">
+        {artworkUrl ? (
+          <img
+            src={artworkUrl}
+            alt={album.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Disc3 className="w-5 h-5 text-muted-foreground/50" />
+          </div>
+        )}
+      </div>
+      {/* Album Title */}
+      <span className="flex-1 min-w-0 truncate font-medium text-sm pr-2">
+        {album.title}
+      </span>
+      {/* Album Artist */}
+      <span className="w-48 truncate text-sm text-muted-foreground px-2">
+        {album.albumArtist ||
+          album.artist ||
+          t("common.unknownArtist", "Unknown Artist")}
+      </span>
+      {/* Year */}
+      <span className="w-16 text-center text-xs text-muted-foreground tabular-nums">
+        {album.year || "-"}
+      </span>
+      {/* Track Count */}
+      <span className="w-16 text-center text-xs text-muted-foreground tabular-nums">
+        {album.trackCount}
+      </span>
+      {/* Duration */}
+      <span className="w-20 text-right text-xs text-muted-foreground tabular-nums pr-2">
+        {formatDuration(album.totalDurationMs)}
+      </span>
+    </div>
+  );
+}
+
 interface AlbumGridProps {
   albumSize?: AlbumSize;
   sortField?: AlbumSortField;
+  viewMode?: AlbumViewMode;
 }
 
 export function AlbumGrid({
   albumSize = "medium",
   sortField = "artist",
+  viewMode = "grid",
 }: AlbumGridProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const { songs, setSongs, searchQuery } = useLibraryStore();
   const { setQueue, setCurrentSong, setIsPlaying, setIsPaused, shuffle } =
     usePlayerStore();
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    song: Song;
+  } | null>(null);
+  const [showPlaylistSubmenu, setShowPlaylistSubmenu] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fetch playlists for context menu
+  const { data: playlists = [] } = useQuery({
+    queryKey: ["playlists"],
+    queryFn: getPlaylists,
+  });
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(e.target as Node)
+      ) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Get card dimensions based on size
   const cardWidth = ALBUM_SIZES[albumSize].width;
@@ -361,6 +485,77 @@ export function AlbumGrid({
     ]
   );
 
+  const handleSongContextMenu = useCallback(
+    (e: React.MouseEvent, song: Song) => {
+      e.preventDefault();
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        song,
+      });
+    },
+    []
+  );
+
+  const handlePlayFromContext = useCallback(
+    async (song: Song) => {
+      const index = albumSongs.findIndex((s) => s.id === song.id);
+      if (index !== -1) {
+        await handlePlaySong(song, index);
+      }
+      setContextMenu(null);
+    },
+    [albumSongs, handlePlaySong]
+  );
+
+  // Helper function to add songs to playlist with duplicate check
+  const handleAddToPlaylist = useCallback(
+    async (playlistId: string, songIds: string[]) => {
+      try {
+        const existingSongs = await getPlaylistSongs(playlistId);
+        const existingIds = new Set(existingSongs.map((s) => s.id));
+        const duplicates = songIds.filter((id) => existingIds.has(id));
+        const newSongs = songIds.filter((id) => !existingIds.has(id));
+
+        if (duplicates.length > 0 && newSongs.length === 0) {
+          alert(
+            t(
+              "playlist.allDuplicates",
+              "All selected songs are already in this playlist."
+            )
+          );
+          return;
+        }
+
+        if (duplicates.length > 0) {
+          const proceed = confirm(
+            t(
+              "playlist.duplicateWarning",
+              "{{count}} song(s) already exist in this playlist. Add anyway?",
+              {
+                count: duplicates.length,
+              }
+            )
+          );
+          if (!proceed) return;
+        }
+
+        await addSongsToPlaylist(
+          playlistId,
+          newSongs.length > 0 ? newSongs : songIds
+        );
+        queryClient.invalidateQueries({ queryKey: ["playlists"] });
+        queryClient.invalidateQueries({
+          queryKey: ["playlist-songs", playlistId],
+        });
+        setContextMenu(null);
+      } catch (error) {
+        console.error("Failed to add to playlist:", error);
+      }
+    },
+    [queryClient, t]
+  );
+
   if (songs.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
@@ -480,6 +675,7 @@ export function AlbumGrid({
                   isPlaying && "playing"
                 )}
                 onDoubleClick={() => handlePlaySong(song, index)}
+                onContextMenu={(e) => handleSongContextMenu(e, song)}
               >
                 <span className="w-8 text-xs text-muted-foreground text-right flex-shrink-0 pr-2">
                   {song.trackNumber || "-"}
@@ -512,6 +708,83 @@ export function AlbumGrid({
           })}
         </div>
 
+        {/* Context Menu */}
+        {contextMenu && (
+          <div
+            ref={contextMenuRef}
+            className="fixed z-50 min-w-[160px] bg-background border border-border rounded-md shadow-xl py-1"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              onClick={() => handlePlayFromContext(contextMenu.song)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
+            >
+              <Play className="w-4 h-4" />
+              {t("contextMenu.playFromHere", "Play from here")}
+            </button>
+            <div
+              className="relative"
+              onMouseEnter={() => setShowPlaylistSubmenu(true)}
+              onMouseLeave={() => setShowPlaylistSubmenu(false)}
+            >
+              <button className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left">
+                <span className="flex items-center gap-2">
+                  <ListPlus className="w-4 h-4" />
+                  {t("contextMenu.addToPlaylist", "Add to Playlist...")}
+                </span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              {showPlaylistSubmenu && (
+                <div className="absolute left-full top-0 ml-1 w-48 py-1 bg-background border border-border rounded-lg shadow-lg z-50">
+                  <button
+                    onClick={async () => {
+                      const name = prompt(
+                        t("playlist.newPlaylistName", "Enter playlist name:")
+                      );
+                      if (name) {
+                        try {
+                          const playlist = await createPlaylist(name);
+                          await addSongsToPlaylist(playlist.id, [
+                            contextMenu.song.id,
+                          ]);
+                          queryClient.invalidateQueries({
+                            queryKey: ["playlists"],
+                          });
+                          setContextMenu(null);
+                        } catch (error) {
+                          console.error("Failed to create playlist:", error);
+                        }
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
+                  >
+                    <ListPlus className="w-4 h-4" />
+                    {t("playlist.createNew", "Create New Playlist")}
+                  </button>
+                  {playlists.length > 0 && (
+                    <>
+                      <div className="border-t border-border my-1" />
+                      {playlists.map((playlist) => (
+                        <button
+                          key={playlist.id}
+                          onClick={() =>
+                            handleAddToPlaylist(playlist.id, [
+                              contextMenu.song.id,
+                            ])
+                          }
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left truncate"
+                        >
+                          {playlist.name}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Status Bar */}
         <div className="px-3 py-1.5 border-t border-border bg-background-secondary text-xs text-muted-foreground">
           {albumSongs.length} {t("library.tracks", "tracks")} •{" "}
@@ -521,6 +794,62 @@ export function AlbumGrid({
     );
   }
 
+  // List View
+  if (viewMode === "list") {
+    return (
+      <div className="flex-1 flex flex-col">
+        {/* Column Headers */}
+        <div className="flex items-center px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase border-b border-border bg-background-secondary">
+          <span className="w-10 flex-shrink-0 mr-3"></span>
+          <span className="flex-1 min-w-0 pr-2">
+            {t("view.columns.album", "Album")}
+          </span>
+          <span className="w-48 px-2">
+            {t("view.columns.albumArtist", "Album Artist")}
+          </span>
+          <span className="w-16 text-center">
+            {t("view.columns.year", "Year")}
+          </span>
+          <span className="w-16 text-center">
+            {t("view.columns.tracks", "Tracks")}
+          </span>
+          <span className="w-20 text-right pr-2">
+            {t("view.columns.duration", "Duration")}
+          </span>
+        </div>
+
+        <div className="flex-1">
+          <AutoSizer
+            renderProp={({ height, width }) => {
+              if (!height || !width) return null;
+
+              return (
+                <List
+                  style={{ height, width }}
+                  rowCount={albums.length}
+                  rowHeight={LIST_ROW_HEIGHT}
+                  rowProps={{
+                    albums,
+                    handleClick: handleAlbumClick,
+                  }}
+                  overscanCount={5}
+                  rowComponent={VirtualListRow}
+                />
+              );
+            }}
+          />
+        </div>
+
+        {/* Status Bar */}
+        <div className="px-3 py-1.5 border-t border-border bg-background-secondary text-xs text-muted-foreground">
+          {albums.length} albums
+          {searchQuery && ` (filtered)`}
+        </div>
+      </div>
+    );
+  }
+
+  // Grid View
   return (
     <div className="flex-1 flex flex-col">
       <div className="flex-1">
