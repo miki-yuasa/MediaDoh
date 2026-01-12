@@ -303,48 +303,6 @@ export function MainContent() {
             </div>
 
             {/* Album Size Selector - only show for grid mode */}
-            {albumViewMode === "grid" && (
-              <div className="flex items-center border border-border rounded-md overflow-hidden">
-                <button
-                  onClick={() => setAlbumSize("small")}
-                  className={cn(
-                    "p-1.5 transition-colors",
-                    albumSize === "small"
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/50"
-                  )}
-                  title={t("view.albumSize.small", "Small")}
-                >
-                  <Grid3X3 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setAlbumSize("medium")}
-                  className={cn(
-                    "p-1.5 transition-colors",
-                    albumSize === "medium"
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/50"
-                  )}
-                  title={t("view.albumSize.medium", "Medium")}
-                >
-                  <Grid2X2 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setAlbumSize("large")}
-                  className={cn(
-                    "p-1.5 transition-colors",
-                    albumSize === "large"
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/50"
-                  )}
-                  title={t("view.albumSize.large", "Large")}
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-
-            {/* View Mode Toggle */}
             <div className="flex items-center border border-border rounded-md overflow-hidden">
               <button
                 onClick={() => setAlbumViewMode("list")}
@@ -359,16 +317,49 @@ export function MainContent() {
                 <List className="w-4 h-4" />
               </button>
               <button
-                onClick={() => setAlbumViewMode("grid")}
+                onClick={() => {
+                  setAlbumViewMode("grid");
+                  setAlbumSize("small");
+                }}
                 className={cn(
                   "p-1.5 transition-colors",
-                  albumViewMode === "grid"
+                  albumSize === "small"
                     ? "bg-accent text-accent-foreground"
                     : "hover:bg-accent/50"
                 )}
-                title={t("view.grid", "Grid View")}
+                title={t("view.albumSize.small", "Small")}
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  setAlbumViewMode("grid");
+                  setAlbumSize("medium");
+                }}
+                className={cn(
+                  "p-1.5 transition-colors",
+                  albumSize === "medium"
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                title={t("view.albumSize.medium", "Medium")}
               >
                 <Grid2X2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  setAlbumViewMode("grid");
+                  setAlbumSize("large");
+                }}
+                className={cn(
+                  "p-1.5 transition-colors",
+                  albumSize === "large"
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                title={t("view.albumSize.large", "Large")}
+              >
+                <LayoutGrid className="w-4 h-4" />
               </button>
             </div>
           </>

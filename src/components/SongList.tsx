@@ -53,7 +53,7 @@ interface ColumnWidths {
 const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   artwork: 40,
   trackNumber: 32,
-  title: 200, // resizable column
+  title: 300, // resizable column - wider default since not flex
   artist: 160,
   album: 160,
   year: 50,
@@ -258,8 +258,8 @@ function SongRow({
         {song.trackNumber || "-"}
       </span>
       <span
-        className="flex-1 min-w-0 px-2 truncate"
-        style={{ minWidth: columnWidths.title }}
+        className="min-w-0 px-2 truncate flex-shrink-0"
+        style={{ width: columnWidths.title }}
       >
         {song.title}
       </span>
@@ -331,9 +331,8 @@ function groupSongsByAlbum(songs: Song[]): SongGroup[] {
   let currentArtPath: string | null = null;
 
   for (const song of songs) {
-    const albumKey = `${song.albumArtist || song.artist || ""}-${
-      song.album || ""
-    }`;
+    // Group by album name only, regardless of artist differences
+    const albumKey = song.album || "";
 
     if (albumKey !== currentAlbum) {
       if (currentGroup.length > 0) {
@@ -345,6 +344,7 @@ function groupSongsByAlbum(songs: Song[]): SongGroup[] {
         });
       }
       currentAlbum = albumKey;
+      // Use albumArtist if available, otherwise use the first song's artist
       currentAlbumArtist = song.albumArtist || song.artist || null;
       currentArtPath = song.artCachePath;
       currentGroup = [song];
@@ -471,9 +471,6 @@ function ResizableColumnHeader({
       ? "justify-center"
       : "justify-start";
 
-  // Check if this is a flex column (has flex-1 in className)
-  const isFlex = className?.includes("flex-1");
-
   return (
     <div
       className={cn(
@@ -481,11 +478,7 @@ function ResizableColumnHeader({
         justifyClass,
         className
       )}
-      style={
-        isFlex
-          ? { minWidth: columnWidths[column] }
-          : { width: columnWidths[column] }
-      }
+      style={{ width: columnWidths[column] }}
     >
       {sortable && onSort ? (
         <button
@@ -506,7 +499,7 @@ function ResizableColumnHeader({
       ) : (
         <span className="truncate">{label}</span>
       )}
-      {/* Resize handle */}
+      {/* Right-edge resize handle */}
       <div
         className={cn(
           "absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
@@ -717,21 +710,16 @@ export function SongList() {
         return comparison * multiplier;
       });
     } else {
-      // Default: sort by album artist, album, then track number to keep songs in same album together
+      // Default: sort by album name first, then track number to keep songs in same album together
+      // This ensures album grouping works correctly regardless of artist differences within albums
       result.sort((a, b) => {
-        // First, sort by album artist (or artist if not set)
-        const aAlbumArtist = (a.albumArtist || a.artist || "").toLowerCase();
-        const bAlbumArtist = (b.albumArtist || b.artist || "").toLowerCase();
-        const albumArtistComparison = aAlbumArtist.localeCompare(bAlbumArtist);
-        if (albumArtistComparison !== 0) return albumArtistComparison;
-
-        // Then, sort by album name
+        // First, sort by album name
         const aAlbum = (a.album || "").toLowerCase();
         const bAlbum = (b.album || "").toLowerCase();
         const albumComparison = aAlbum.localeCompare(bAlbum);
         if (albumComparison !== 0) return albumComparison;
 
-        // Finally, sort by track number within the same album
+        // Then, sort by track number within the same album
         const aTrack = a.trackNumber || 999;
         const bTrack = b.trackNumber || 999;
         return aTrack - bTrack;
@@ -1030,7 +1018,7 @@ export function SongList() {
           className="flex-shrink-0 pr-2"
         />
 
-        {/* Title - resizable flex column */}
+        {/* Title - resizable fixed column */}
         <ResizableColumnHeader
           column="title"
           label={t("view.columns.title")}
@@ -1040,7 +1028,7 @@ export function SongList() {
           sortColumn={sortColumn}
           sortDirection={sortDirection}
           onSort={() => handleColumnSort("title")}
-          className="flex-1 px-2"
+          className="flex-shrink-0 min-w-0 px-2"
         />
 
         {/* Artist - resizable */}

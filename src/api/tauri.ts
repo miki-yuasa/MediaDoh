@@ -235,12 +235,13 @@ export async function stop(): Promise<void> {
 
 /**
  * Seek to a specific position in milliseconds
+ * @param preservePause If true, maintains paused state when seeking while paused
  */
 export async function seekTo(
   positionMs: number,
   preservePause: boolean = true
 ): Promise<void> {
-  return invoke("seek_to", { positionMs, preservePause });
+  return invoke("seek_to", { positionMs, preserve_pause: preservePause });
 }
 
 /**

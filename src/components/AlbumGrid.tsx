@@ -115,7 +115,7 @@ function AlbumCard({ album, size, onClick }: AlbumCardProps) {
   const subtitleSize = size === "small" ? "text-[10px]" : "text-xs";
 
   return (
-    <div className="album-card" onClick={onClick}>
+    <div className="album-card" onClick={onClick} title={album.title}>
       <div className="album-art">
         {artworkUrl ? (
           <img
