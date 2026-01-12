@@ -1,5 +1,5 @@
 /**
- * MediaDoh - Application State Store
+ * MediaBo - Application State Store
  * Using Zustand for global state management
  */
 
@@ -119,7 +119,7 @@ export const usePlayerStore = create<PlayerStore>()(
       setPosition: (positionMs) => set({ positionMs }),
     }),
     {
-      name: "mediadoh-player",
+      name: "mediabo-player",
       partialize: (state) => ({
         volume: state.volume,
         repeatMode: state.repeatMode,
@@ -228,7 +228,7 @@ export const useLibraryStore = create<LibraryStore>()(
       setSortConfig: (config) => set({ sortConfig: config }),
     }),
     {
-      name: "mediadoh-library",
+      name: "mediabo-library",
       partialize: (state) => ({
         viewMode: state.viewMode,
         sortConfig: state.sortConfig,
@@ -272,7 +272,7 @@ export const useUIStore = create<UIStore>()(
       setViewMode: (mode) => set({ viewMode: mode }),
     }),
     {
-      name: "mediadoh-ui",
+      name: "mediabo-ui",
     }
   )
 );

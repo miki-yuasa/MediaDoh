@@ -34,9 +34,10 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 interface PlaylistDetailProps {
   playlistId: string;
+  onDelete?: () => void;
 }
 
-export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
+export function PlaylistDetail({ playlistId, onDelete }: PlaylistDetailProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const {
@@ -317,11 +318,12 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
     try {
       await deletePlaylist(playlistId);
       queryClient.invalidateQueries({ queryKey: ["playlists"] });
-      // Navigation will be handled by parent
+      // Navigate away after deletion
+      onDelete?.();
     } catch (error) {
       console.error("Failed to delete playlist:", error);
     }
-  }, [playlistId, queryClient, t]);
+  }, [playlistId, queryClient, t, onDelete]);
 
   const handleExport = useCallback(async () => {
     if (!playlist) return;

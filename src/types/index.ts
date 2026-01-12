@@ -1,5 +1,5 @@
 /**
- * MediaDoh TypeScript Types
+ * MediaBo TypeScript Types
  * These types mirror the Rust models for type-safe frontend development
  */
 

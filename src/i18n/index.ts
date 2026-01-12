@@ -5,8 +5,8 @@ import LanguageDetector from "i18next-browser-languagedetector";
 // English translations
 const enTranslations = {
   common: {
-    appName: "MediaDoh",
-    appSubtitle: "Media道",
+    appName: "MediaBo",
+    appSubtitle: "Media坊",
     loading: "Loading...",
     error: "Error",
     retry: "Retry",
@@ -191,8 +191,8 @@ const enTranslations = {
 // Japanese translations
 const jaTranslations = {
   common: {
-    appName: "MediaDoh",
-    appSubtitle: "メディア道",
+    appName: "MediaBo",
+    appSubtitle: "メディア坊",
     loading: "読み込み中...",
     error: "エラー",
     retry: "再試行",

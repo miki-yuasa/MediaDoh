@@ -1,4 +1,4 @@
-//! MediaDoh - Tauri command handlers
+//! MediaBo - Tauri command handlers
 
 use crate::database::DbPool;
 use crate::devices::detect_devices;
@@ -219,7 +219,7 @@ pub async fn update_song_metadata(
         // No updates, just return the existing song
         let songs = get_all_songs(&state.db).await?;
         return songs.into_iter().find(|s| s.id == song_id).ok_or_else(|| {
-            crate::error::MediaDohError::FileNotFound(format!("Song not found: {}", song_id))
+            crate::error::MediaBoError::FileNotFound(format!("Song not found: {}", song_id))
         });
     }
 
@@ -279,7 +279,7 @@ pub async fn update_song_metadata(
     // Return updated song
     let songs = get_all_songs(&state.db).await?;
     songs.into_iter().find(|s| s.id == song_id).ok_or_else(|| {
-        crate::error::MediaDohError::FileNotFound(format!("Song not found: {}", song_id))
+        crate::error::MediaBoError::FileNotFound(format!("Song not found: {}", song_id))
     })
 }
 
@@ -353,9 +353,17 @@ pub async fn stop(state: State<'_, AppState>) -> Result<()> {
 
 /// Seek to a specific position in milliseconds
 #[tauri::command]
-pub async fn seek_to(position_ms: u64, state: State<'_, AppState>) -> Result<()> {
+pub async fn seek_to(
+    position_ms: u64,
+    preserve_pause: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<()> {
     let player = state.player.lock().unwrap();
-    player.seek_to(position_ms)?;
+    if preserve_pause.unwrap_or(false) && player.get_state().is_paused {
+        player.seek_to_paused(position_ms)?;
+    } else {
+        player.seek_to(position_ms)?;
+    }
     Ok(())
 }
 

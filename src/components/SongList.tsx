@@ -66,7 +66,7 @@ const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
 const MIN_COLUMN_WIDTHS: ColumnWidths = {
   artwork: 40,
   trackNumber: 32,
-  title: 80,
+  title: 120,
   artist: 80,
   album: 80,
   year: 45,
@@ -600,17 +600,19 @@ export function SongList() {
   const [sortColumn, setSortColumn] = useState<SortColumn>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  const handleColumnSort = useCallback((column: SortColumn) => {
-    setSortColumn((prev) => {
-      if (prev === column) {
-        // Toggle direction or clear if already desc
+  const handleColumnSort = useCallback(
+    (column: SortColumn) => {
+      if (sortColumn === column) {
+        // Toggle direction when clicking same column
         setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-        return column;
+      } else {
+        // New column, set to ascending
+        setSortColumn(column);
+        setSortDirection("asc");
       }
-      setSortDirection("asc");
-      return column;
-    });
-  }, []);
+    },
+    [sortColumn]
+  );
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);

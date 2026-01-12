@@ -35,7 +35,7 @@ export type AlbumViewMode = "grid" | "list";
 
 export function MainContent() {
   const { t } = useTranslation();
-  const { activeSection } = useUIStore();
+  const { activeSection, setActiveSection } = useUIStore();
   const { setSearchQuery, isScanning, setIsScanning } = useLibraryStore();
   const queryClient = useQueryClient();
 
@@ -139,7 +139,12 @@ export function MainContent() {
     // Check if viewing a playlist
     if (activeSection.startsWith("playlist-")) {
       const playlistId = activeSection.replace("playlist-", "");
-      return <PlaylistDetail playlistId={playlistId} />;
+      return (
+        <PlaylistDetail
+          playlistId={playlistId}
+          onDelete={() => setActiveSection("songs")}
+        />
+      );
     }
 
     // Library views
@@ -229,7 +234,7 @@ export function MainContent() {
                 className={cn(
                   "flex items-center gap-1.5 px-2 py-1.5 text-sm rounded-md transition-colors",
                   "hover:bg-accent",
-                  "w-32" // Fixed width for sort button
+                  "min-w-[140px]" // Min width for sort button
                 )}
                 title={t("view.sortBy")}
               >
@@ -342,18 +347,6 @@ export function MainContent() {
             {/* View Mode Toggle */}
             <div className="flex items-center border border-border rounded-md overflow-hidden">
               <button
-                onClick={() => setAlbumViewMode("grid")}
-                className={cn(
-                  "p-1.5 transition-colors",
-                  albumViewMode === "grid"
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50"
-                )}
-                title={t("view.grid", "Grid View")}
-              >
-                <Grid2X2 className="w-4 h-4" />
-              </button>
-              <button
                 onClick={() => setAlbumViewMode("list")}
                 className={cn(
                   "p-1.5 transition-colors",
@@ -364,6 +357,18 @@ export function MainContent() {
                 title={t("view.list", "List View")}
               >
                 <List className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setAlbumViewMode("grid")}
+                className={cn(
+                  "p-1.5 transition-colors",
+                  albumViewMode === "grid"
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                title={t("view.grid", "Grid View")}
+              >
+                <Grid2X2 className="w-4 h-4" />
               </button>
             </div>
           </>

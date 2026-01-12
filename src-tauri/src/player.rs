@@ -1,6 +1,6 @@
-//! MediaDoh - Audio playback module
+//! MediaBo - Audio playback module
 
-use crate::error::{MediaDohError, Result};
+use crate::error::{MediaBoError, Result};
 use crate::models::RepeatMode;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -24,7 +24,8 @@ pub struct AudioPlayer {
 
 enum PlayerCommand {
     Play(PathBuf),
-    PlayFrom(PathBuf, u64), // Play from a specific position in milliseconds
+    PlayFrom(PathBuf, u64),   // Play from a specific position in milliseconds
+    SeekPaused(PathBuf, u64), // Seek to position but stay paused
     Pause,
     Resume,
     Stop,
@@ -144,6 +145,50 @@ impl AudioPlayer {
                             }
                         }
                     }
+                    PlayerCommand::SeekPaused(path, position_ms) => {
+                        // Stop existing playback
+                        if let Some(s) = sink.take() {
+                            s.stop();
+                        }
+
+                        match File::open(&path) {
+                            Ok(file) => {
+                                let reader = BufReader::new(file);
+                                match Decoder::new(reader) {
+                                    Ok(source) => {
+                                        // Skip to the desired position using duration-based skip
+                                        let skipped_source = source.skip_duration(
+                                            std::time::Duration::from_millis(position_ms),
+                                        );
+
+                                        match Sink::try_new(&stream_handle) {
+                                            Ok(new_sink) => {
+                                                let vol = *volume_clone.lock().unwrap();
+                                                new_sink.set_volume(vol);
+                                                new_sink.append(skipped_source);
+                                                // Immediately pause the sink
+                                                new_sink.pause();
+                                                *is_playing_clone.lock().unwrap() = true;
+                                                *is_paused_clone.lock().unwrap() = true;
+                                                *playback_start_clone.lock().unwrap() = None;
+                                                *pause_position_clone.lock().unwrap() = position_ms;
+                                                sink = Some(new_sink);
+                                            }
+                                            Err(e) => {
+                                                log::error!("Failed to create sink: {}", e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to decode audio: {}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to open file: {}", e);
+                            }
+                        }
+                    }
                     PlayerCommand::Pause => {
                         if let Some(ref s) = sink {
                             s.pause();
@@ -200,7 +245,7 @@ impl AudioPlayer {
         *self.current_file.lock().unwrap() = Some(file_path.clone());
         self.command_tx
             .send(PlayerCommand::Play(file_path.clone()))
-            .map_err(|e| MediaDohError::Playback(format!("Failed to send play command: {}", e)))?;
+            .map_err(|e| MediaBoError::Playback(format!("Failed to send play command: {}", e)))?;
         Ok(())
     }
 
@@ -211,11 +256,28 @@ impl AudioPlayer {
             self.command_tx
                 .send(PlayerCommand::PlayFrom(file_path, position_ms))
                 .map_err(|e| {
-                    MediaDohError::Playback(format!("Failed to send seek command: {}", e))
+                    MediaBoError::Playback(format!("Failed to send seek command: {}", e))
                 })?;
             Ok(())
         } else {
-            Err(MediaDohError::Playback(
+            Err(MediaBoError::Playback(
+                "No file is currently playing".to_string(),
+            ))
+        }
+    }
+
+    /// Seek to a specific position in milliseconds but stay paused
+    pub fn seek_to_paused(&self, position_ms: u64) -> Result<()> {
+        let current_file = self.get_current_file();
+        if let Some(file_path) = current_file {
+            self.command_tx
+                .send(PlayerCommand::SeekPaused(file_path, position_ms))
+                .map_err(|e| {
+                    MediaBoError::Playback(format!("Failed to send seek paused command: {}", e))
+                })?;
+            Ok(())
+        } else {
+            Err(MediaBoError::Playback(
                 "No file is currently playing".to_string(),
             ))
         }
@@ -225,15 +287,15 @@ impl AudioPlayer {
     pub fn pause(&self) -> Result<()> {
         self.command_tx
             .send(PlayerCommand::Pause)
-            .map_err(|e| MediaDohError::Playback(format!("Failed to send pause command: {}", e)))?;
+            .map_err(|e| MediaBoError::Playback(format!("Failed to send pause command: {}", e)))?;
         Ok(())
     }
 
     /// Resume playback
     pub fn resume(&self) -> Result<()> {
-        self.command_tx.send(PlayerCommand::Resume).map_err(|e| {
-            MediaDohError::Playback(format!("Failed to send resume command: {}", e))
-        })?;
+        self.command_tx
+            .send(PlayerCommand::Resume)
+            .map_err(|e| MediaBoError::Playback(format!("Failed to send resume command: {}", e)))?;
         Ok(())
     }
 
@@ -242,7 +304,7 @@ impl AudioPlayer {
         *self.current_file.lock().unwrap() = None;
         self.command_tx
             .send(PlayerCommand::Stop)
-            .map_err(|e| MediaDohError::Playback(format!("Failed to send stop command: {}", e)))?;
+            .map_err(|e| MediaBoError::Playback(format!("Failed to send stop command: {}", e)))?;
         Ok(())
     }
 
@@ -251,9 +313,7 @@ impl AudioPlayer {
         let volume = volume.clamp(0.0, 1.0);
         self.command_tx
             .send(PlayerCommand::SetVolume(volume))
-            .map_err(|e| {
-                MediaDohError::Playback(format!("Failed to send volume command: {}", e))
-            })?;
+            .map_err(|e| MediaBoError::Playback(format!("Failed to send volume command: {}", e)))?;
         Ok(())
     }
 

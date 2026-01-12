@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MediaDoh",
+  "productName": "MediaBo",
   "version": "0.1.0",
-  "identifier": "com.mediadoh.app",
+  "identifier": "com.mediabo.app",
   "build": {
     "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "MediaDoh - Media道",
+        "title": "MediaBo - Media坊",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -39,8 +39,8 @@
     ],
     "category": "Music",
     "shortDescription": "Music management for Sony Walkman",
-    "longDescription": "MediaDoh (Media道) - A cross-platform music management application designed for Sony Walkman devices. Manage your local library and synchronize with your Walkman.",
-    "copyright": "Copyright © 2026 MediaDoh",
+    "longDescription": "MediaBo (Media坊) - A cross-platform music management application designed for Sony Walkman devices. Manage your local library and synchronize with your Walkman.",
+    "copyright": "Copyright © 2026 MediaBo",
     "macOS": {
       "minimumSystemVersion": "10.15"
     },

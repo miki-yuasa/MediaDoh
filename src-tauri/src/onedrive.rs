@@ -1,11 +1,11 @@
-//! MediaDoh - OneDrive integration module
+//! MediaBo - OneDrive integration module
 //!
 //! Provides functionality to:
 //! 1. Detect if files are OneDrive cloud-only placeholders
 //! 2. Authenticate with Microsoft Graph API using Device Code Flow
 //! 3. Fetch audio metadata from OneDrive without downloading files
 
-use crate::error::{MediaDohError, Result};
+use crate::error::{MediaBoError, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -188,7 +188,7 @@ impl OneDriveClient {
 
         // Check if client ID is configured
         if *client_id == "your-client-id-here" || client_id.is_empty() {
-            return Err(MediaDohError::Network(
+            return Err(MediaBoError::Network(
                 "OneDrive client ID not configured. Please enter your Azure App Client ID in Settings.".to_string()
             ));
         }
@@ -203,11 +203,11 @@ impl OneDriveClient {
             .form(&params)
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(MediaDohError::Network(format!(
+            return Err(MediaBoError::Network(format!(
                 "Device code request failed: {}",
                 error_text
             )));
@@ -216,7 +216,7 @@ impl OneDriveClient {
         let device_code: DeviceCodeResponse = response
             .json::<DeviceCodeResponse>()
             .await
-            .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e: reqwest::Error| MediaBoError::Network(e.to_string()))?;
 
         Ok(device_code)
     }
@@ -237,7 +237,7 @@ impl OneDriveClient {
             .form(&params)
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
         if response.status().is_success() {
             #[derive(Deserialize)]
@@ -250,7 +250,7 @@ impl OneDriveClient {
             let token_resp: TokenResponse = response
                 .json::<TokenResponse>()
                 .await
-                .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+                .map_err(|e: reqwest::Error| MediaBoError::Network(e.to_string()))?;
 
             let tokens = OneDriveTokens {
                 access_token: token_resp.access_token,
@@ -274,14 +274,14 @@ impl OneDriveClient {
         let error_resp: ErrorResponse = response
             .json::<ErrorResponse>()
             .await
-            .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e: reqwest::Error| MediaBoError::Network(e.to_string()))?;
 
         match error_resp.error.as_str() {
             "authorization_pending" => Ok(None), // Still waiting for user
             "slow_down" => Ok(None),             // Need to slow down polling
-            "expired_token" => Err(MediaDohError::Network("Device code expired".to_string())),
-            "access_denied" => Err(MediaDohError::Network("User denied access".to_string())),
-            _ => Err(MediaDohError::Network(format!(
+            "expired_token" => Err(MediaBoError::Network("Device code expired".to_string())),
+            "access_denied" => Err(MediaBoError::Network("User denied access".to_string())),
+            _ => Err(MediaBoError::Network(format!(
                 "Auth error: {}",
                 error_resp.error
             ))),
@@ -293,7 +293,7 @@ impl OneDriveClient {
         let current = self.tokens.read().await.clone();
         let refresh_token = current
             .and_then(|t| t.refresh_token)
-            .ok_or_else(|| MediaDohError::Network("No refresh token available".to_string()))?;
+            .ok_or_else(|| MediaBoError::Network("No refresh token available".to_string()))?;
 
         let client_id = self.client_id.read().await;
         let params = [
@@ -308,10 +308,10 @@ impl OneDriveClient {
             .form(&params)
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
         if !response.status().is_success() {
-            return Err(MediaDohError::Network("Token refresh failed".to_string()));
+            return Err(MediaBoError::Network("Token refresh failed".to_string()));
         }
 
         #[derive(Deserialize)]
@@ -324,7 +324,7 @@ impl OneDriveClient {
         let token_resp: TokenResponse = response
             .json::<TokenResponse>()
             .await
-            .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e: reqwest::Error| MediaBoError::Network(e.to_string()))?;
 
         let tokens = OneDriveTokens {
             access_token: token_resp.access_token,
@@ -350,7 +350,7 @@ impl OneDriveClient {
         let access_token = tokens
             .as_ref()
             .map(|t| t.access_token.clone())
-            .ok_or_else(|| MediaDohError::Network("Not authenticated".to_string()))?;
+            .ok_or_else(|| MediaBoError::Network("Not authenticated".to_string()))?;
 
         // Encode the path for the URL
         let encoded_path = onedrive_path
@@ -370,12 +370,12 @@ impl OneDriveClient {
             .header("Authorization", format!("Bearer {}", access_token))
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(MediaDohError::Network(format!(
+            return Err(MediaBoError::Network(format!(
                 "Graph API error ({}): {}",
                 status, error_text
             )));
@@ -385,7 +385,7 @@ impl OneDriveClient {
         let response_text = response
             .text()
             .await
-            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
         // Log the raw API response
         log::info!("=== OneDrive API Response for '{}' ===", encoded_path);
@@ -394,7 +394,7 @@ impl OneDriveClient {
 
         // Parse the JSON
         let file_info: OneDriveFileInfo = serde_json::from_str(&response_text)
-            .map_err(|e| MediaDohError::Network(format!("Failed to parse API response: {}", e)))?;
+            .map_err(|e| MediaBoError::Network(format!("Failed to parse API response: {}", e)))?;
 
         Ok(file_info)
     }
@@ -409,7 +409,7 @@ impl OneDriveClient {
         let access_token = tokens
             .as_ref()
             .map(|t| t.access_token.clone())
-            .ok_or_else(|| MediaDohError::Network("Not authenticated".to_string()))?;
+            .ok_or_else(|| MediaBoError::Network("Not authenticated".to_string()))?;
 
         let encoded_path = folder_path
             .split('/')
@@ -429,10 +429,10 @@ impl OneDriveClient {
             .header("Authorization", format!("Bearer {}", access_token))
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
         if !response.status().is_success() {
-            return Err(MediaDohError::Network("Failed to list files".to_string()));
+            return Err(MediaBoError::Network("Failed to list files".to_string()));
         }
 
         #[derive(Deserialize)]
@@ -445,7 +445,7 @@ impl OneDriveClient {
         let list: ListResponse = response
             .json::<ListResponse>()
             .await
-            .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e: reqwest::Error| MediaBoError::Network(e.to_string()))?;
 
         // Filter for audio files
         let audio_extensions = ["mp3", "flac", "m4a", "aac", "wav", "ogg", "opus", "wma"];
@@ -471,7 +471,7 @@ impl OneDriveClient {
         let access_token = tokens
             .as_ref()
             .map(|t| t.access_token.clone())
-            .ok_or_else(|| MediaDohError::Network("Not authenticated".to_string()))?;
+            .ok_or_else(|| MediaBoError::Network("Not authenticated".to_string()))?;
 
         let url = format!(
             "{}/me/drive/items/{}/thumbnails/0/large",
@@ -484,7 +484,7 @@ impl OneDriveClient {
             .header("Authorization", format!("Bearer {}", access_token))
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
         if !response.status().is_success() {
             return Ok(None);
@@ -498,7 +498,7 @@ impl OneDriveClient {
         let thumb: ThumbnailResponse = response
             .json::<ThumbnailResponse>()
             .await
-            .map_err(|e: reqwest::Error| MediaDohError::Network(e.to_string()))?;
+            .map_err(|e: reqwest::Error| MediaBoError::Network(e.to_string()))?;
 
         Ok(Some(thumb.url))
     }
@@ -514,7 +514,7 @@ impl OneDriveClient {
         let access_token = tokens
             .as_ref()
             .map(|t| t.access_token.clone())
-            .ok_or_else(|| MediaDohError::Network("Not authenticated".to_string()))?;
+            .ok_or_else(|| MediaBoError::Network("Not authenticated".to_string()))?;
 
         let url = format!("{}/me/drive/items/{}/content", GRAPH_API_BASE, file_id);
 
@@ -530,7 +530,7 @@ impl OneDriveClient {
             .header("Authorization", format!("Bearer {}", access_token))
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(format!("Content request failed: {}", e)))?;
+            .map_err(|e| MediaBoError::Network(format!("Content request failed: {}", e)))?;
 
         let status = response.status();
 
@@ -539,7 +539,7 @@ impl OneDriveClient {
             if let Some(location) = response.headers().get("location") {
                 let download_url = location
                     .to_str()
-                    .map_err(|_| MediaDohError::Network("Invalid Location header".to_string()))?
+                    .map_err(|_| MediaBoError::Network("Invalid Location header".to_string()))?
                     .to_string();
                 log::info!("Got download URL from 302 redirect");
                 return Ok(download_url);
@@ -548,13 +548,13 @@ impl OneDriveClient {
 
         // Some responses might be 200 with direct content (rare for large files)
         if status.is_success() {
-            return Err(MediaDohError::Network(
+            return Err(MediaBoError::Network(
                 "Got direct content instead of redirect - file may be too small".to_string(),
             ));
         }
 
         let error_text = response.text().await.unwrap_or_default();
-        Err(MediaDohError::Network(format!(
+        Err(MediaBoError::Network(format!(
             "Failed to get download URL ({}): {}",
             status, error_text
         )))
@@ -574,12 +574,12 @@ impl OneDriveClient {
             .header("Range", format!("bytes={}-{}", start, end))
             .send()
             .await
-            .map_err(|e| MediaDohError::Network(format!("Range request failed: {}", e)))?;
+            .map_err(|e| MediaBoError::Network(format!("Range request failed: {}", e)))?;
 
         // Accept both 200 (full content) and 206 (partial content)
         if !response.status().is_success() {
             let status = response.status();
-            return Err(MediaDohError::Network(format!(
+            return Err(MediaBoError::Network(format!(
                 "Range request failed with status: {}",
                 status
             )));
@@ -588,7 +588,7 @@ impl OneDriveClient {
         let bytes = response
             .bytes()
             .await
-            .map_err(|e| MediaDohError::Network(format!("Failed to read response body: {}", e)))?;
+            .map_err(|e| MediaBoError::Network(format!("Failed to read response body: {}", e)))?;
 
         Ok(bytes.to_vec())
     }
@@ -706,7 +706,7 @@ impl OneDriveClient {
                     data.len(),
                     first_bytes_hex
                 );
-                return Err(MediaDohError::Metadata(format!(
+                return Err(MediaBoError::Metadata(format!(
                     "Failed to detect file type: {}",
                     e
                 )));
@@ -723,7 +723,7 @@ impl OneDriveClient {
                     first_bytes_hex,
                     first_bytes_ascii
                 );
-                return Err(MediaDohError::Metadata(format!(
+                return Err(MediaBoError::Metadata(format!(
                     "Failed to parse metadata: {}",
                     e
                 )));

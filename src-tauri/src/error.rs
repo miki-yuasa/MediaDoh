@@ -1,9 +1,9 @@
-//! MediaDoh - Error types
+//! MediaBo - Error types
 
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum MediaDohError {
+pub enum MediaBoError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
@@ -42,7 +42,7 @@ pub enum MediaDohError {
 }
 
 // Make the error serializable for Tauri
-impl serde::Serialize for MediaDohError {
+impl serde::Serialize for MediaBoError {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -51,4 +51,4 @@ impl serde::Serialize for MediaDohError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, MediaDohError>;
+pub type Result<T> = std::result::Result<T, MediaBoError>;

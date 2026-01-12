@@ -1,5 +1,5 @@
 /**
- * MediaDoh - Tauri API bindings
+ * MediaBo - Tauri API bindings
  * Type-safe wrappers for Tauri commands
  */
 
@@ -236,8 +236,11 @@ export async function stop(): Promise<void> {
 /**
  * Seek to a specific position in milliseconds
  */
-export async function seekTo(positionMs: number): Promise<void> {
-  return invoke("seek_to", { positionMs });
+export async function seekTo(
+  positionMs: number,
+  preservePause: boolean = true
+): Promise<void> {
+  return invoke("seek_to", { positionMs, preservePause });
 }
 
 /**

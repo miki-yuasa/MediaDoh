@@ -1,7 +1,7 @@
-//! MediaDoh - Library scanner module
+//! MediaBo - Library scanner module
 
 use crate::database::DbPool;
-use crate::error::{MediaDohError, Result};
+use crate::error::{MediaBoError, Result};
 use crate::models::{AudioFormat, Song, SyncStatus};
 use crate::onedrive::{
     get_cloud_file_status, local_path_to_onedrive_path, CloudFileStatus, OneDriveClient,
@@ -40,8 +40,8 @@ impl Default for ScanOptions {
 /// Get the artwork cache directory
 fn get_artwork_cache_dir() -> Result<PathBuf> {
     let cache_dir = dirs::cache_dir()
-        .ok_or_else(|| MediaDohError::InvalidPath("Cannot find cache directory".to_string()))?
-        .join("MediaDoh")
+        .ok_or_else(|| MediaBoError::InvalidPath("Cannot find cache directory".to_string()))?
+        .join("MediaBo")
         .join("artwork");
     std::fs::create_dir_all(&cache_dir)?;
     Ok(cache_dir)
@@ -158,7 +158,7 @@ pub async fn scan_directory_with_options(
     use tauri::Emitter;
 
     let path = dunce::canonicalize(path)
-        .map_err(|e| MediaDohError::InvalidPath(format!("Cannot canonicalize path: {}", e)))?;
+        .map_err(|e| MediaBoError::InvalidPath(format!("Cannot canonicalize path: {}", e)))?;
 
     log::info!("Scanning directory: {}", path.display());
 
@@ -324,7 +324,7 @@ async fn parse_cloud_file(path: &Path, client: Arc<OneDriveClient>) -> Result<So
     // Convert local path to OneDrive path
     let onedrive_path = local_path_to_onedrive_path(&path).ok_or_else(|| {
         log::error!("Cannot determine OneDrive path for: {}", path.display());
-        MediaDohError::InvalidPath(format!(
+        MediaBoError::InvalidPath(format!(
             "Cannot determine OneDrive path for: {}",
             path.display()
         ))
@@ -495,10 +495,10 @@ async fn download_and_cache_thumbnail(
         .get(thumb_url)
         .send()
         .await
-        .map_err(|e| MediaDohError::Network(e.to_string()))?;
+        .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
     if !response.status().is_success() {
-        return Err(MediaDohError::Network(
+        return Err(MediaBoError::Network(
             "Failed to download thumbnail".to_string(),
         ));
     }
@@ -506,7 +506,7 @@ async fn download_and_cache_thumbnail(
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| MediaDohError::Network(e.to_string()))?;
+        .map_err(|e| MediaBoError::Network(e.to_string()))?;
 
     // Write to cache
     let mut file = File::create(&artwork_path)?;
@@ -530,9 +530,9 @@ async fn parse_audio_file(path: &Path) -> Result<Song> {
 
     // Parse audio metadata with lofty
     let tagged_file = Probe::open(&path)
-        .map_err(|e| MediaDohError::Metadata(e.to_string()))?
+        .map_err(|e| MediaBoError::Metadata(e.to_string()))?
         .read()
-        .map_err(|e| MediaDohError::Metadata(e.to_string()))?;
+        .map_err(|e| MediaBoError::Metadata(e.to_string()))?;
 
     let properties = tagged_file.properties();
     let tag = tagged_file

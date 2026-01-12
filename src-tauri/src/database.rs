@@ -1,6 +1,6 @@
-//! MediaDoh - Database module
+//! MediaBo - Database module
 
-use crate::error::{MediaDohError, Result};
+use crate::error::{MediaBoError, Result};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::PathBuf;
 
@@ -11,7 +11,7 @@ pub async fn init_database(app_data_dir: &PathBuf) -> Result<DbPool> {
     // Ensure the directory exists
     std::fs::create_dir_all(app_data_dir)?;
 
-    let db_path = app_data_dir.join("mediadoh.db");
+    let db_path = app_data_dir.join("mediabo.db");
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
 
     log::info!("Initializing database at: {}", db_path.display());
@@ -231,18 +231,18 @@ fn get_migration_statements() -> Vec<String> {
 /// Get the app data directory in a cross-platform way
 pub fn get_app_data_dir() -> Result<PathBuf> {
     let base = dirs::data_dir().ok_or_else(|| {
-        MediaDohError::Config("Could not determine app data directory".to_string())
+        MediaBoError::Config("Could not determine app data directory".to_string())
     })?;
 
-    Ok(base.join("MediaDoh"))
+    Ok(base.join("MediaBo"))
 }
 
 /// Get the cache directory for album art etc.
 pub fn get_cache_dir() -> Result<PathBuf> {
     let base = dirs::cache_dir()
-        .ok_or_else(|| MediaDohError::Config("Could not determine cache directory".to_string()))?;
+        .ok_or_else(|| MediaBoError::Config("Could not determine cache directory".to_string()))?;
 
-    let cache_dir = base.join("MediaDoh");
+    let cache_dir = base.join("MediaBo");
     std::fs::create_dir_all(&cache_dir)?;
 
     Ok(cache_dir)

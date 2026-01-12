@@ -286,6 +286,21 @@ export function PlayerBar() {
         return;
       }
 
+      // Helper function for arrow key seeking
+      const seekByAmount = async (amountMs: number) => {
+        if (!currentSong) return;
+        const newPosition = Math.max(
+          0,
+          Math.min(currentSong.durationMs, positionMs + amountMs)
+        );
+        setPosition(newPosition);
+        try {
+          await seekTo(newPosition);
+        } catch (error) {
+          console.error("Seek error:", error);
+        }
+      };
+
       switch (e.key) {
         case " ":
           e.preventDefault();
@@ -301,21 +316,15 @@ export function PlayerBar() {
             if (keyHoldRef.current.interval) {
               clearInterval(keyHoldRef.current.interval);
             }
-            handleNext();
+            // Initial seek: 5 seconds forward
+            seekByAmount(5000);
             keyHoldRef.current = {
               key: "ArrowRight",
               startTime: Date.now(),
               interval: window.setInterval(() => {
-                const elapsed = Date.now() - keyHoldRef.current.startTime;
-                // Accelerate: more frequent after holding longer
-                if (elapsed > 2000 || elapsed % 100 < 50) {
-                  handleNext();
-                } else if (elapsed > 1000 || elapsed % 200 < 50) {
-                  handleNext();
-                } else if (elapsed % 400 < 50) {
-                  handleNext();
-                }
-              }, 50),
+                // When held, seek 10 seconds (2x speed)
+                seekByAmount(10000);
+              }, 500),
             };
           }
           break;
@@ -329,21 +338,15 @@ export function PlayerBar() {
             if (keyHoldRef.current.interval) {
               clearInterval(keyHoldRef.current.interval);
             }
-            handlePrevious();
+            // Initial seek: 5 seconds backward
+            seekByAmount(-5000);
             keyHoldRef.current = {
               key: "ArrowLeft",
               startTime: Date.now(),
               interval: window.setInterval(() => {
-                const elapsed = Date.now() - keyHoldRef.current.startTime;
-                // Accelerate: more frequent after holding longer
-                if (elapsed > 2000 || elapsed % 100 < 50) {
-                  handlePrevious();
-                } else if (elapsed > 1000 || elapsed % 200 < 50) {
-                  handlePrevious();
-                } else if (elapsed % 400 < 50) {
-                  handlePrevious();
-                }
-              }, 50),
+                // When held, seek 10 seconds backward (2x speed)
+                seekByAmount(-10000);
+              }, 500),
             };
           }
           break;
@@ -376,7 +379,15 @@ export function PlayerBar() {
         clearInterval(keyHoldRef.current.interval);
       }
     };
-  }, [handlePlayPause, handleNext, handlePrevious, handleStop]);
+  }, [
+    handlePlayPause,
+    handleNext,
+    handlePrevious,
+    handleStop,
+    currentSong,
+    positionMs,
+    setPosition,
+  ]);
 
   const cycleRepeatMode = () => {
     const modes: Array<"off" | "all" | "one"> = ["off", "all", "one"];

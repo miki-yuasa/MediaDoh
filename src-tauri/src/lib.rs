@@ -1,4 +1,4 @@
-//! MediaDoh (Media道) - Music management application for Sony Walkman
+//! MediaBo (Media坊) - Music management application for Sony Walkman
 //!
 //! A cross-platform desktop application for managing music libraries
 //! and synchronizing with Sony Walkman devices.
@@ -26,7 +26,7 @@ pub fn run() {
     // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    log::info!("Starting MediaDoh...");
+    log::info!("Starting MediaBo...");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -35,20 +35,20 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Build the application menu
-            let app_menu = SubmenuBuilder::new(app, "MediaDoh")
+            let app_menu = SubmenuBuilder::new(app, "MediaBo")
                 .item(&PredefinedMenuItem::about(
                     app,
-                    Some("About MediaDoh"),
+                    Some("About MediaBo"),
                     None,
                 )?)
                 .separator()
                 .item(&PredefinedMenuItem::services(app, None)?)
                 .separator()
-                .item(&PredefinedMenuItem::hide(app, Some("Hide MediaDoh"))?)
+                .item(&PredefinedMenuItem::hide(app, Some("Hide MediaBo"))?)
                 .item(&PredefinedMenuItem::hide_others(app, Some("Hide Others"))?)
                 .item(&PredefinedMenuItem::show_all(app, Some("Show All"))?)
                 .separator()
-                .item(&PredefinedMenuItem::quit(app, Some("Quit MediaDoh"))?)
+                .item(&PredefinedMenuItem::quit(app, Some("Quit MediaBo"))?)
                 .build()?;
 
             let import_item = MenuItemBuilder::new("Import Playlist...")
@@ -158,7 +158,7 @@ pub fn run() {
 
             app.manage(state);
 
-            log::info!("MediaDoh initialized successfully");
+            log::info!("MediaBo initialized successfully");
             Ok(())
         })
         .on_menu_event(|app, event| {

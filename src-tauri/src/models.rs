@@ -1,4 +1,4 @@
-//! MediaDoh - Core database models and types
+//! MediaBo - Core database models and types
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

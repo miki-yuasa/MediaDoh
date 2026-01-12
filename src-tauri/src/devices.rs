@@ -1,4 +1,4 @@
-//! MediaDoh - Device detection module for Walkman and external storage
+//! MediaBo - Device detection module for Walkman and external storage
 
 use crate::error::Result;
 use crate::models::{Device, DeviceType};

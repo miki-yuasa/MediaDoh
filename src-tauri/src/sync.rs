@@ -1,8 +1,8 @@
-//! MediaDoh - Walkman synchronization module
+//! MediaBo - Walkman synchronization module
 
 use crate::database::DbPool;
 use crate::devices::get_device_by_path;
-use crate::error::{MediaDohError, Result};
+use crate::error::{MediaBoError, Result};
 use crate::models::{Device, Song, SyncStatus};
 use std::collections::HashMap;
 use std::fs;
@@ -42,12 +42,12 @@ pub struct SyncComparison {
 /// Compare local library with device to determine sync actions
 pub async fn compare_with_device(pool: &DbPool, device_path: &PathBuf) -> Result<SyncComparison> {
     let device = get_device_by_path(device_path)?
-        .ok_or_else(|| MediaDohError::DeviceNotFound(device_path.to_string_lossy().to_string()))?;
+        .ok_or_else(|| MediaBoError::DeviceNotFound(device_path.to_string_lossy().to_string()))?;
 
     let music_folder = device
         .music_folder
         .clone()
-        .ok_or_else(|| MediaDohError::Sync("No music folder found on device".to_string()))?;
+        .ok_or_else(|| MediaBoError::Sync("No music folder found on device".to_string()))?;
 
     // Get all songs from local library
     let songs = crate::scanner::get_all_songs(pool).await?;
@@ -212,12 +212,12 @@ pub async fn sync_to_device(
     song_ids: &[String],
 ) -> Result<Vec<SyncResult>> {
     let device = get_device_by_path(device_path)?
-        .ok_or_else(|| MediaDohError::DeviceNotFound(device_path.to_string_lossy().to_string()))?;
+        .ok_or_else(|| MediaBoError::DeviceNotFound(device_path.to_string_lossy().to_string()))?;
 
     let music_folder = device
         .music_folder
         .clone()
-        .ok_or_else(|| MediaDohError::Sync("No music folder found on device".to_string()))?;
+        .ok_or_else(|| MediaBoError::Sync("No music folder found on device".to_string()))?;
 
     // Ensure music folder exists
     fs::create_dir_all(&music_folder)?;
